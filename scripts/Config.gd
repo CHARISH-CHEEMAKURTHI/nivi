@@ -3,18 +3,35 @@ extends Node
 ## Every number here is a PLACEHOLDER, matching the design document's note that
 ## balancing values are first-pass and not final.
 
-const GRID := 40                  ## buildable tiles across
-const BUILD_MIN := 2              ## buildable area is [BUILD_MIN, BUILD_MAX)
-const BUILD_MAX := 38
+## The home island. Ten times the buildable area of the original Castle One
+## plot (114x114 tiles against the original 36x36), so a full army of
+## buildings no longer tiles the whole ground by Castle Level Two.
+const GRID := 126                 ## home island tiles across, edge to edge
+const BUILD_MIN := 6              ## buildable area is [BUILD_MIN, BUILD_MAX)
+const BUILD_MAX := 120
+
+## Raids keep the original, smaller map: the enemy layouts in battle.gd are
+## hand-placed around its centre and do not need to grow with the home base.
+const BATTLE_GRID := 40
+const BATTLE_BUILD_MIN := 2
+const BATTLE_BUILD_MAX := 38
+
 const BATTLE_TIME := 150.0        ## seconds per raid
 const SEASON_SECONDS := 60.0      ## one season of in-game time (aging tick)
 const OFFLINE_CAP := 7200.0       ## most offline seconds credited on load
 const SAVE_PATH := "user://nivi_save.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2   ## bumped: Gems, builders and the larger home grid are new to this save shape
+
+## Builders: how many constructions can be under way at once. Every ruler
+## starts with two; the rest come from Builder's Huts, bought with Gems.
+const BASE_BUILDERS := 2
+const MAX_BUILDER_HUTS := 4
+const GEM_STORAGE_CAP := 999999.0   ## Gems have no storage building; effectively uncapped
 
 const RESOURCES := {
 	"serge": {"name": "Serge", "color": Color("ff9a3c")},
 	"jade": {"name": "Jade", "color": Color("3ddc97")},
+	"gems": {"name": "Gems", "color": Color("b98aff")},
 }
 
 const CATEGORIES := [
@@ -33,6 +50,12 @@ const BUILDINGS := {
 		"desc": "Seat of the throne and a bunker. Shelters citizens during attacks. Upgrading to Castle Level Two is beyond this demo.",
 		"provides": {"pop_cap": 6, "storage": {"serge": 1000, "jade": 1000}},
 	},
+	"builder_hut": {
+		"name": "Builder's Hut", "category": "core", "w": 1, "h": 1, "hp": 200, "limit": MAX_BUILDER_HUTS,
+		"cost": {"gems": 150}, "time": 30.0,
+		"desc": "Puts a builder to work full time. Each hut lets one more construction run at once; buy Gems' worth of them to build several things together.",
+		"provides": {"builders": 1},
+	},
 	"barracks_h": {
 		"name": "Barracks H", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
 		"cost": {"serge": 150}, "time": 10.0,
@@ -41,49 +64,52 @@ const BUILDINGS := {
 	},
 	"barracks_l": {
 		"name": "Barracks L", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
-		"cost": {"jade": 150}, "time": 10.0,
+		"cost": {"jade": 105, "serge": 45}, "time": 10.0,
 		"desc": "Creature training ground. Performs the summoning ritual that brings creatures over from the other world.",
 		"trains": ["unitone", "firon", "garuan"],
 	},
 	"serge_mine": {
-		"name": "Serge Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
+		"name": "Serge Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 6,
 		"cost": {"jade": 100}, "time": 6.0, "loot": 0.10,
 		"desc": "Mines Serge from the rock. Tap to collect. Fills up if left alone.",
 		"produces": {"resource": "serge", "per_second": 1.2, "capacity": 300},
 	},
 	"jade_mine": {
-		"name": "Jade Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
+		"name": "Jade Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 6,
 		"cost": {"serge": 100}, "time": 6.0, "loot": 0.10,
 		"desc": "Mines Jade crystal. Tap to collect. Fills up if left alone.",
-		"produces": {"resource": "jade", "per_second": 1.2, "capacity": 300},
+		# A touch faster than the Serge mine: walls, roads and homes are
+		# Serge-heavy sinks elsewhere in this list, so Jade gets a small edge
+		# to keep the two currencies moving at a comparable pace.
+		"produces": {"resource": "jade", "per_second": 1.4, "capacity": 300},
 	},
 	"serge_storage": {
-		"name": "Serge Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 2,
+		"name": "Serge Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 3,
 		"cost": {"jade": 200}, "time": 12.0, "loot": 0.25,
 		"desc": "Dedicated store for harvested Serge. Raises how much the kingdom can hold.",
 		"provides": {"storage": {"serge": 1500}},
 	},
 	"jade_storage": {
-		"name": "Jade Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 2,
+		"name": "Jade Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 3,
 		"cost": {"serge": 200}, "time": 12.0, "loot": 0.25,
 		"desc": "Dedicated store for harvested Jade. Raises how much the kingdom can hold.",
 		"provides": {"storage": {"jade": 1500}},
 	},
 	"home": {
-		"name": "Home", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 6,
-		"cost": {"serge": 80}, "time": 5.0,
+		"name": "Home", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 10,
+		"cost": {"serge": 55, "jade": 25}, "time": 5.0,
 		"desc": "Houses citizens. More homes let the population grow, and population feeds the creature roster.",
 		"provides": {"pop_cap": 4},
 	},
 	"farm": {
-		"name": "Farm", "category": "support", "w": 3, "h": 2, "hp": 250, "limit": 3,
-		"cost": {"serge": 100}, "time": 6.0,
+		"name": "Farm", "category": "support", "w": 3, "h": 2, "hp": 250, "limit": 5,
+		"cost": {"serge": 70, "jade": 30}, "time": 6.0,
 		"desc": "Feeds the kingdom. Well-fed citizens are happier.",
 		"provides": {"happiness": 8, "profession": "Farmer"},
 	},
 	"shop": {
-		"name": "Shop", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 2,
-		"cost": {"jade": 120}, "time": 6.0,
+		"name": "Shop", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 3,
+		"cost": {"jade": 85, "serge": 35}, "time": 6.0,
 		"desc": "A market stall. Trade lifts the mood of the town.",
 		"provides": {"happiness": 5, "profession": "Merchant"},
 	},
@@ -95,30 +121,30 @@ const BUILDINGS := {
 	},
 	"hospital": {
 		"name": "Hospital", "category": "support", "w": 3, "h": 2, "hp": 400, "limit": 1,
-		"cost": {"jade": 200}, "time": 12.0,
+		"cost": {"jade": 140, "serge": 60}, "time": 12.0,
 		"desc": "Treats heavily injured soldiers and creatures so they rejoin the roster far sooner.",
 		"provides": {"heal_speed": 4, "profession": "Healer"},
 	},
 	"road": {
-		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 200,
-		"cost": {"serge": 5}, "time": 0.0, "flat": true, "passable": true,
+		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 1400,
+		"cost": {"serge": 3, "jade": 2}, "time": 0.0, "flat": true, "passable": true,
 		"desc": "Cobbled path. Decorative, but a tidy kingdom is a happy one.",
 		"provides": {"happiness": 0.25},
 	},
 	"wall": {
-		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 80,
-		"cost": {"serge": 20}, "time": 0.0, "wall": true,
+		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 700,
+		"cost": {"serge": 14, "jade": 6}, "time": 0.0, "wall": true,
 		"desc": "Defensive perimeter. Attackers must break through or walk around.",
 	},
 	"guard_station": {
-		"name": "Guard Station", "category": "military", "w": 2, "h": 2, "hp": 500, "limit": 2,
-		"cost": {"serge": 100}, "time": 8.0,
+		"name": "Guard Station", "category": "military", "w": 2, "h": 2, "hp": 500, "limit": 3,
+		"cost": {"serge": 70, "jade": 30}, "time": 8.0,
 		"desc": "Posting for soldiers and law enforcers on defence duty. Houses part of your army.",
 		"provides": {"housing": 8},
 	},
 	"outpost": {
-		"name": "Outpost", "category": "military", "w": 2, "h": 2, "hp": 450, "limit": 2,
-		"cost": {"jade": 150}, "time": 8.0,
+		"name": "Outpost", "category": "military", "w": 2, "h": 2, "hp": 450, "limit": 3,
+		"cost": {"jade": 105, "serge": 45}, "time": 8.0,
 		"desc": "Additional defensive posting structure. Houses part of your army.",
 		"provides": {"housing": 8},
 	},
@@ -129,7 +155,7 @@ const BUILDINGS := {
 		"provides": {"housing": 6, "housing_for": "cavalry"},
 	},
 	"cannon": {
-		"name": "Short-Fire Cannon", "category": "defense", "w": 2, "h": 2, "hp": 350, "limit": 3,
+		"name": "Short-Fire Cannon", "category": "defense", "w": 2, "h": 2, "hp": 350, "limit": 5,
 		"cost": {"serge": 150, "jade": 50}, "time": 10.0,
 		"desc": "Cannon Type A. Short range but a very fast rate of fire, charged by a law enforcer channelling their creature's energy.",
 		"defense": {"range": 4.0, "rate": 0.35, "damage": 4.0},
@@ -211,14 +237,16 @@ const NAMES := ["Aldric", "Bea", "Cassian", "Dara", "Edwin", "Fen", "Greta", "Ha
 	"Kira", "Lorne", "Mira", "Nils", "Orla", "Piet", "Quinn", "Rosa", "Sten", "Tova", "Ulric", "Vera", "Wren", "Yara", "Zed"]
 
 ## Turn a tile coordinate into the world position of that tile's centre.
-static func tile_to_world(tx: int, ty: int) -> Vector3:
-	return Vector3(float(tx) - GRID * 0.5 + 0.5, 0.0, float(ty) - GRID * 0.5 + 0.5)
+## `grid` picks which island this is measured against: the home island (the
+## default) or, when raiding, the smaller BATTLE_GRID.
+static func tile_to_world(tx: int, ty: int, grid: int = GRID) -> Vector3:
+	return Vector3(float(tx) - grid * 0.5 + 0.5, 0.0, float(ty) - grid * 0.5 + 0.5)
 
 ## Turn a world position into the tile it falls on.
-static func world_to_tile(p: Vector3) -> Vector2i:
-	return Vector2i(int(floor(p.x + GRID * 0.5)), int(floor(p.z + GRID * 0.5)))
+static func world_to_tile(p: Vector3, grid: int = GRID) -> Vector2i:
+	return Vector2i(int(floor(p.x + grid * 0.5)), int(floor(p.z + grid * 0.5)))
 
 ## World position for the centre of a building's footprint.
-static func building_origin(tx: int, ty: int, w: int, h: int) -> Vector3:
-	var c := tile_to_world(tx, ty)
+static func building_origin(tx: int, ty: int, w: int, h: int, grid: int = GRID) -> Vector3:
+	var c := tile_to_world(tx, ty, grid)
 	return c + Vector3((w - 1) * 0.5, 0.0, (h - 1) * 0.5)

@@ -35,14 +35,23 @@ Windows, Linux, macOS and Android are already set up in `export_presets.cfg`.
 
 | Action | Input |
 | --- | --- |
-| Pan | Drag, or `W` `A` `S` `D` / arrow keys |
-| Zoom | Mouse wheel, or pinch |
-| Inspect a building | Tap it |
+| Pan | Drag with a mouse, one finger or one touchpad finger, or `W` `A` `S` `D` / arrow keys |
+| Zoom | Scroll wheel, pinch (touchpad or touchscreen), or hold `Q` to zoom in / `E` to zoom out |
+| Inspect a building | Tap it. A light tap never nudges the camera first, so it always hits what is under it |
 | Collect a full mine | Tap it again, or press **Collect** |
-| Build | **Build**, choose a building, drag it into place, press **Place** |
-| Cancel | `Esc` or **Cancel** |
+| Build (most buildings) | **Build**, choose a building, drag it into place, press **Place** |
+| Lay walls or roads | **Build**, choose Wall or Road, then press and drag across the ground in any direction — every tile the drag crosses is placed on the spot, Clash-of-Clans style. Press **Done** when finished |
+| Cancel | `Esc`, or **Cancel** / **Done** |
 | Open the shop | `B` |
 | Collect everything | `C` |
+
+A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
+trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
+finger drags and taps, two fingers pan and pinch-zoom together.
+
+Only a few **Builders** can work on a construction at once (see the Builders
+count in the top bar); buy a Builder's Hut with **Gems** for another, or spend
+Gems to rush any building straight to completion from its info panel.
 
 In a raid: pick a troop card, tap open ground to send them in, tap a troop to
 select it, then tap a building to make that troop focus it. **Hold** and
@@ -57,9 +66,11 @@ Everything the design document lists for Castle Level One, section 5:
 | --- | --- |
 | **Castle** | The seat of the throne and a bunker. Carries the base storage and shelters citizens. The upgrade to Castle Two is deliberately locked. |
 | **Barracks H and L** | Two separate queues. H enlists citizens as Knights and Cavalry, L summons Unitone, Firon and Garuan. |
-| **Serge and Jade mines, and their stores** | Mines fill over time and are tapped to collect. Stores raise the ceiling. |
-| **Support buildings** | Homes, farms, shops, taverns, hospital, roads and walls. |
+| **Serge and Jade mines, and their stores** | Mines fill over time and are tapped to collect. Stores raise the ceiling. Jade mines run a little faster than Serge, to offset how many buildings draw on Serge. |
+| **Support buildings** | Homes, farms, shops, taverns, hospital, roads and walls, all now costing a mix of Serge and Jade rather than leaning on one currency. |
 | **Military stationing** | Guard Stations and Outposts house the army; the Law Enforcer Ground Cavalry Outpost houses cavalry alone. |
+| **Builders and Gems** | Only a handful of constructions can run at once; a Builder's Hut (bought with Gems) adds another, up to six. Gems also rush a building to instant completion, and trickle in from finishing buildings and from raids. |
+| **The home island** | Ten times the buildable area of the original plot, so a full set of buildings no longer tiles the whole island by Castle Level Two. |
 | **Short-Fire Cannon** | The single Castle One defence: short range, fast rate of fire. |
 | **Population** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Civilians bond one creature, soldiers two, the King five. |
 | **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |

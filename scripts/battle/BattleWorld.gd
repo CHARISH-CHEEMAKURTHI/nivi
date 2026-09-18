@@ -23,10 +23,11 @@ func setup(battle: BattleState) -> void:
 	add_child(WorldEnv.make_environment())
 	add_child(WorldEnv.make_sun())
 	var island := Island.new()
+	island.grid_size = Config.BATTLE_GRID
 	island.seed_value = int(state.kingdom["seed"])
 	add_child(island)
 	rig = CameraRig.new()
-	rig.bounds = Config.GRID * 0.5 + 2.0
+	rig.bounds = Config.BATTLE_GRID * 0.5 + 2.0
 	add_child(rig)
 	rig.tapped.connect(_on_tapped)
 	rig.set_zoom(46.0)
@@ -34,7 +35,7 @@ func setup(battle: BattleState) -> void:
 	for b in state.buildings:
 		var d: Dictionary = Config.BUILDINGS[b["type"]]
 		var node := MeshBuilder.instance(Buildings.build(b["type"]))
-		node.position = Config.building_origin(b["x"], b["y"], int(d["w"]), int(d["h"]))
+		node.position = Config.building_origin(b["x"], b["y"], int(d["w"]), int(d["h"]), Config.BATTLE_GRID)
 		add_child(node)
 		_building_nodes[b["id"]] = node
 
@@ -72,7 +73,7 @@ func _ring(col: Color) -> MeshInstance3D:
 	return mi
 
 static func tile_to_world(p: Vector2) -> Vector3:
-	return Vector3(p.x - Config.GRID * 0.5, 0.0, p.y - Config.GRID * 0.5)
+	return Vector3(p.x - Config.BATTLE_GRID * 0.5, 0.0, p.y - Config.BATTLE_GRID * 0.5)
 
 func _process(delta: float) -> void:
 	if state == null or state.ended:
@@ -144,7 +145,7 @@ func _play_event(e: Dictionary) -> void:
 				rubble.box(Vector3(px, 0, pz), Vector3(rng.randf_range(0.16, 0.34), rng.randf_range(0.08, 0.2), rng.randf_range(0.16, 0.34)),
 					Palette.ROCK_DARK if i % 2 == 0 else Palette.DIRT_DARK, rng.randf() * TAU)
 			var wreck := MeshBuilder.instance(rubble.commit())
-			wreck.position = Config.building_origin(b["x"], b["y"], int(d["w"]), int(d["h"]))
+			wreck.position = Config.building_origin(b["x"], b["y"], int(d["w"]), int(d["h"]), Config.BATTLE_GRID)
 			add_child(wreck)
 			_building_nodes[id] = wreck
 			_puff(wreck.position + Vector3(0, 0.4, 0))
@@ -209,9 +210,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if deploy_type == "" or not (event is InputEventMouseMotion):
 		return
 	var world := rig.screen_to_ground((event as InputEventMouseMotion).position)
-	var tile := Config.world_to_tile(world)
+	var tile := Config.world_to_tile(world, Config.BATTLE_GRID)
 	_deploy_hint.visible = true
-	_deploy_hint.position = Config.tile_to_world(tile.x, tile.y)
+	_deploy_hint.position = Config.tile_to_world(tile.x, tile.y, Config.BATTLE_GRID)
 	var ok := state.can_deploy_at(tile)
 	_deploy_hint.material_override.albedo_color = Color(0.5, 1, 0.6, 0.6) if ok else Color(1, 0.35, 0.35, 0.6)
 
@@ -219,8 +220,8 @@ func _on_tapped(screen_pos: Vector2) -> void:
 	if state == null or state.ended:
 		return
 	var world := rig.screen_to_ground(screen_pos)
-	var tile := Config.world_to_tile(world)
-	var xz := Vector2(world.x + Config.GRID * 0.5, world.z + Config.GRID * 0.5)
+	var tile := Config.world_to_tile(world, Config.BATTLE_GRID)
+	var xz := Vector2(world.x + Config.BATTLE_GRID * 0.5, world.z + Config.BATTLE_GRID * 0.5)
 	var unit := state.unit_near(xz)
 	if not unit.is_empty() and deploy_type == "":
 		tapped_unit.emit(unit)

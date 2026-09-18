@@ -11,7 +11,7 @@ static func footprint(type: String) -> Vector2i:
 		"castle": return Vector2i(4, 4)
 		"barracks_h", "barracks_l": return Vector2i(3, 3)
 		"farm", "tavern", "hospital", "cavalry_outpost": return Vector2i(3, 2)
-		"road", "wall": return Vector2i(1, 1)
+		"road", "wall", "builder_hut": return Vector2i(1, 1)
 		_: return Vector2i(2, 2)
 
 static func build(type: String) -> Mesh:
@@ -31,6 +31,7 @@ static func build(type: String) -> Mesh:
 		"hospital": _hospital(b)
 		"road": _road(b)
 		"wall": _wall(b)
+		"builder_hut": _builder_hut(b)
 		"guard_station": _guard_station(b)
 		"outpost": _outpost(b)
 		"cavalry_outpost": _cavalry_outpost(b)
@@ -268,6 +269,19 @@ static func _wall(b: MeshBuilder) -> void:
 	for sx in [-0.31, 0.31]:
 		for sz in [-0.31, 0.31]:
 			b.box(Vector3(sx, 0.88, sz), Vector3(0.3, 0.18, 0.3), Palette.STONE_LIGHT)
+
+# --- the builder's hut -------------------------------------------------------
+static func _builder_hut(b: MeshBuilder) -> void:
+	var s := 1.0 - MARGIN * 2.0
+	_plinth(b, Vector2(s, s), 0.10, Palette.DIRT)
+	# a small canvas pup-tent, big enough for one busy builder
+	b.gable(Vector3(0, 0.10, 0), Vector3(0.62, 0.48, 0.6), Palette.THATCH, 0.0, 0.08)
+	b.box(Vector3(0, 0.10, 0.02), Vector3(0.05, 0.3, 0.05), Palette.WOOD_DARK)
+	# a leaning hammer and a small pile of planks out front
+	b.box(Vector3(0.3, 0.28, -0.28), Vector3(0.05, 0.3, 0.05), Palette.WOOD_DARK, 0.5)
+	b.box(Vector3(0.33, 0.42, -0.25), Vector3(0.14, 0.07, 0.09), Palette.IRON, 0.5)
+	b.box(Vector3(-0.24, 0.13, -0.3), Vector3(0.3, 0.05, 0.1), Palette.WOOD)
+	b.box(Vector3(-0.24, 0.19, -0.3), Vector3(0.28, 0.05, 0.09), Palette.WOOD_LIGHT)
 
 # --- military ---------------------------------------------------------------
 static func _guard_station(b: MeshBuilder) -> void:

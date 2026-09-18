@@ -1,7 +1,14 @@
 class_name BaseWorld
 extends Node3D
 ## The player's kingdom in 3D: keeps a model in sync with every building in the
-## save, handles tapping to select, and runs the drag-to-place build mode.
+## save, handles tapping to select, and runs the two build modes.
+##
+## Most buildings use "ghost" mode: a single translucent copy of the model
+## follows your drag, and you confirm it with the Place button. Walls and
+## roads use "line" mode instead, the way Clash of Clans lays them: press
+## down and every tile you cross gets one immediately, in whatever direction
+## you drag, with no Place button in the way — you just keep going until you
+## press Done.
 
 signal building_tapped(building: Dictionary)
 signal ground_tapped(tile: Vector2i)
@@ -17,20 +24,33 @@ var _ghost_tile := Vector2i.ZERO
 var _ghost_move_id := 0
 var _selection: MeshInstance3D = null
 var _selected_id := 0
-var _tile_marker: MeshInstance3D = null
+
+# line mode (walls, roads)
+var _line_mode := false
+var _line_type := ""
+var _line_marker: MeshInstance3D = null
+var _line_last_tile := Vector2i.ZERO
+var _line_has_last := false
+const LINE_STEP_LIMIT := 400   ## a runaway drag falls back to a single tile past this
 
 func _ready() -> void:
 	add_child(WorldEnv.make_environment())
 	add_child(WorldEnv.make_sun())
 	island = Island.new()
+	island.grid_size = Config.GRID
 	add_child(island)
 	rig = CameraRig.new()
 	rig.bounds = Config.GRID * 0.5 + 2.0
 	add_child(rig)
 	rig.tapped.connect(_on_tapped)
-	_selection = _make_selection_marker()
+	rig.pressed.connect(_on_pressed)
+	rig.drag_moved.connect(_on_drag_moved)
+	_selection = _make_marker(Color(0.4, 1.0, 0.6, 1), Color(0.6, 1.0, 0.75, 1))
 	add_child(_selection)
 	_selection.visible = false
+	_line_marker = _make_marker(Color(0.4, 1.0, 0.6, 1), Color(0.6, 1.0, 0.75, 1))
+	add_child(_line_marker)
+	_line_marker.visible = false
 	Game.buildings_changed.connect(rebuild)
 	rebuild()
 
@@ -81,7 +101,7 @@ func _tag_height(type: String) -> float:
 		"castle": return 3.6
 		"outpost": return 2.7
 		"barracks_h", "barracks_l", "tavern", "hospital": return 2.1
-		"wall", "road": return 1.2
+		"wall", "road", "builder_hut": return 1.2
 		_: return 1.7
 
 func _process(_delta: float) -> void:
@@ -117,9 +137,9 @@ static func _format_time(seconds: float) -> String:
 	return "%ds" % s
 
 # ---------------------------------------------------------------- selection
-func _make_selection_marker() -> MeshInstance3D:
+func _make_marker(fill: Color, top: Color) -> MeshInstance3D:
 	var b := MeshBuilder.new()
-	b.rounded_slab(Vector3(0, 0.02, 0), Vector3(1, 0.02, 1), 0.18, 3, Color(0.4, 1.0, 0.6, 1), Color(0.6, 1.0, 0.75, 1))
+	b.rounded_slab(Vector3(0, 0.02, 0), Vector3(1, 0.02, 1), 0.18, 3, fill, top)
 	var mi := MeshInstance3D.new()
 	mi.mesh = b.commit()
 	var m := StandardMaterial3D.new()
@@ -151,6 +171,15 @@ func selected_building() -> Dictionary:
 # ---------------------------------------------------------------- placing
 func start_placing(type: String, move_id := 0) -> void:
 	cancel_placing()
+	rig.blocked = true
+	if move_id == 0:
+		var d: Dictionary = Config.BUILDINGS[type]
+		if d.get("wall", false) or d.get("flat", false):
+			_start_line(type)
+			return
+	_start_ghost(type, move_id)
+
+func _start_ghost(type: String, move_id: int) -> void:
 	_ghost_type = type
 	_ghost_move_id = move_id
 	_ghost = Node3D.new()
@@ -189,11 +218,20 @@ func start_placing(type: String, move_id := 0) -> void:
 	var fp2 := Buildings.footprint(type)
 	move_ghost(Vector2i(focus.x - fp2.x / 2, focus.y - fp2.y / 2))
 
+func _start_line(type: String) -> void:
+	_line_mode = true
+	_line_type = type
+	_line_has_last = false
+	_line_marker.visible = false
+
 func is_placing() -> bool:
-	return _ghost != null
+	return _ghost != null or _line_mode
+
+func is_line_mode() -> bool:
+	return _line_mode
 
 func placing_type() -> String:
-	return _ghost_type
+	return _line_type if _line_mode else _ghost_type
 
 func move_ghost(tile: Vector2i) -> void:
 	if _ghost == null:
@@ -224,16 +262,11 @@ func confirm_placing() -> String:
 	var err := Game.build(_ghost_type, tile.x, tile.y)
 	if err != "":
 		return err
-	var type := _ghost_type
 	cancel_placing()
-	# walls and roads are laid in runs, so stay in build mode when affordable
-	var d: Dictionary = Config.BUILDINGS[type]
-	if (d.get("wall", false) or d.get("flat", false)) and Game.place_error(type, tile.x, tile.y + 1) == "":
-		start_placing(type)
-		move_ghost(Vector2i(tile.x, tile.y + 1))
 	return ""
 
 func cancel_placing() -> void:
+	rig.blocked = false
 	if _ghost_move_id != 0 and _models.has(_ghost_move_id):
 		_models[_ghost_move_id].visible = true
 	_ghost_move_id = 0
@@ -241,9 +274,15 @@ func cancel_placing() -> void:
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
+	_line_mode = false
+	_line_type = ""
+	_line_marker.visible = false
 
 # ---------------------------------------------------------------- input
 func _on_tapped(screen_pos: Vector2) -> void:
+	# line mode places on press, not on tap-release; see _on_pressed
+	if _line_mode:
+		return
 	var world := rig.screen_to_ground(screen_pos)
 	var tile := Config.world_to_tile(world)
 	if is_placing():
@@ -258,13 +297,75 @@ func _on_tapped(screen_pos: Vector2) -> void:
 	else:
 		building_tapped.emit(b)
 
-## Drag support while in build mode: the ghost follows the finger.
-func _unhandled_input(event: InputEvent) -> void:
-	if not is_placing():
+## Line mode: the first tile of a new stroke, placed the instant you press down.
+func _on_pressed(screen_pos: Vector2) -> void:
+	if not _line_mode:
 		return
-	if event is InputEventMouseMotion and (event as InputEventMouseMotion).button_mask != 0:
-		var world := rig.screen_to_ground((event as InputEventMouseMotion).position)
-		var tile := Config.world_to_tile(world)
-		var fp := Buildings.footprint(_ghost_type)
-		move_ghost(Vector2i(tile.x - fp.x / 2, tile.y - fp.y / 2))
-		get_viewport().set_input_as_handled()
+	var tile := Config.world_to_tile(rig.screen_to_ground(screen_pos))
+	_place_line_tile(tile)
+	_line_last_tile = tile
+	_line_has_last = true
+
+## Line mode: every tile the drag crosses since the last one gets filled in,
+## so a fast drag in any direction still lays an unbroken run. Ghost mode: the
+## building just follows the finger, in whichever direction it goes.
+func _on_drag_moved(screen_pos: Vector2) -> void:
+	if not _line_mode:
+		if _ghost != null:
+			var t := Config.world_to_tile(rig.screen_to_ground(screen_pos))
+			var fp := Buildings.footprint(_ghost_type)
+			move_ghost(Vector2i(t.x - fp.x / 2, t.y - fp.y / 2))
+		return
+	var tile := Config.world_to_tile(rig.screen_to_ground(screen_pos))
+	if not _line_has_last:
+		_place_line_tile(tile)
+		_line_last_tile = tile
+		_line_has_last = true
+		return
+	if tile == _line_last_tile:
+		_update_line_marker(tile)
+		return
+	for step in _tiles_between(_line_last_tile, tile):
+		_place_line_tile(step)
+	_line_last_tile = tile
+
+func _place_line_tile(tile: Vector2i) -> void:
+	_update_line_marker(tile)
+	if Game.place_error(_line_type, tile.x, tile.y) != "":
+		return
+	if Game.build(_line_type, tile.x, tile.y) == "":
+		Sfx.play("place", 1.0, 0.05)
+
+func _update_line_marker(tile: Vector2i) -> void:
+	_line_marker.visible = true
+	_line_marker.position = Config.tile_to_world(tile.x, tile.y) + Vector3(0, 0.05, 0)
+	var ok := Game.place_error(_line_type, tile.x, tile.y) == ""
+	_line_marker.material_override.albedo_color = Color(0.4, 1, 0.5, 0.55) if ok else Color(1, 0.3, 0.3, 0.55)
+
+## Every grid tile on the straight line from `a` (exclusive) to `b`
+## (inclusive), so a quick drag never skips a tile between two mouse-motion
+## events regardless of which way it runs.
+static func _tiles_between(a: Vector2i, b: Vector2i) -> Array:
+	var out: Array = []
+	if maxi(absi(b.x - a.x), absi(b.y - a.y)) > LINE_STEP_LIMIT:
+		out.append(b)
+		return out
+	var dx := absi(b.x - a.x)
+	var dy := -absi(b.y - a.y)
+	var sx := 1 if a.x < b.x else -1
+	var sy := 1 if a.y < b.y else -1
+	var err := dx + dy
+	var x := a.x
+	var y := a.y
+	var guard := 0
+	while (x != b.x or y != b.y) and guard < LINE_STEP_LIMIT:
+		guard += 1
+		var e2 := 2 * err
+		if e2 >= dy:
+			err += dy
+			x += sx
+		if e2 <= dx:
+			err += dx
+			y += sy
+		out.append(Vector2i(x, y))
+	return out

@@ -2,15 +2,21 @@ class_name Island
 extends Node3D
 ## The world the base sits on: a grass plateau ringed by beach, standing in an
 ## open sea, with trees, rocks and bushes scattered around the buildable area.
+## `grid_size` must be set (BaseWorld uses the home Config.GRID, a raid uses
+## the smaller Config.BATTLE_GRID) before this node enters the tree, since it
+## drives everything built in _ready().
 
-const GRID := 40        # buildable tiles across
 const TILE := 1.0       # world units per tile
-const HALF := GRID * TILE * 0.5
+const REFERENCE_GRID := 40.0   # the original island size these numbers were tuned for
 
+@export var grid_size := 40
 @export var seed_value := 1
 @export var decorate := true
 
+var HALF := 20.0
+
 func _ready() -> void:
+	HALF = grid_size * TILE * 0.5
 	_build()
 
 func _build() -> void:
@@ -23,7 +29,8 @@ func _build() -> void:
 	# --- sea ---------------------------------------------------------------
 	var sea := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(420, 420)
+	var sea_size: float = maxf(420.0, sand_half * 2.0 + 180.0)
+	plane.size = Vector2(sea_size, sea_size)
 	plane.subdivide_width = 96
 	plane.subdivide_depth = 96
 	sea.mesh = plane
@@ -61,12 +68,16 @@ func _build() -> void:
 	if decorate:
 		_scatter(rng, grass_half)
 
-## Trees, bushes and rocks, kept outside the buildable square.
+## Trees, bushes and rocks, kept outside the buildable square. The count
+## scales with the island's perimeter (roughly how the ring of decoration
+## outside the build area itself grows) so a much bigger island does not read
+## as mostly bare.
 func _scatter(rng: RandomNumberGenerator, grass_half: float) -> void:
 	var b := MeshBuilder.new()
 	var placed: Array[Vector2] = []
+	var target := int(62 * (float(grid_size) / REFERENCE_GRID))
 	var tries := 0
-	while placed.size() < 62 and tries < 1400:
+	while placed.size() < target and tries < target * 24:
 		tries += 1
 		var p := Vector2(rng.randf_range(-grass_half + 0.9, grass_half - 0.9), rng.randf_range(-grass_half + 0.9, grass_half - 0.9))
 		# keep the building area clear

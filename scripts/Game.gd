@@ -19,7 +19,7 @@ func new_game() -> void:
 	state = {
 		"version": Config.SAVE_VERSION,
 		"saved_at": Time.get_unix_time_from_system(),
-		"resources": {"serge": 600.0, "jade": 600.0},
+		"resources": {"serge": 600.0, "jade": 600.0, "gems": 120.0},
 		"credits": 0,
 		"happiness_mod": 0.0,
 		"decree_cooldowns": {},
@@ -140,8 +140,8 @@ func can_place(type: String, tx: int, ty: int, ignore_id := 0) -> bool:
 
 ## Everything the finished buildings provide, totalled up.
 func capacities() -> Dictionary:
-	var cap := {"storage": {"serge": 0.0, "jade": 0.0}, "pop_cap": 0, "housing": 0,
-		"housing_cavalry": 0, "happiness": 0.0, "heal_speed": 1.0, "hospital": false}
+	var cap := {"storage": {"serge": 0.0, "jade": 0.0, "gems": Config.GEM_STORAGE_CAP}, "pop_cap": 0, "housing": 0,
+		"housing_cavalry": 0, "happiness": 0.0, "heal_speed": 1.0, "hospital": false, "builders": Config.BASE_BUILDERS}
 	for b in state["buildings"]:
 		if not is_built(b):
 			continue
@@ -164,7 +164,19 @@ func capacities() -> Dictionary:
 		if p.has("heal_speed"):
 			cap["heal_speed"] = maxf(cap["heal_speed"], float(p["heal_speed"]))
 			cap["hospital"] = true
+		if p.has("builders"):
+			cap["builders"] += int(p["builders"])
 	return cap
+
+## How many builders are out on a job right now: one per building that is
+## still under construction and actually takes time (walls and roads finish
+## instantly and never tie one up).
+func builders_busy() -> int:
+	var busy := 0
+	for b in state["buildings"]:
+		if b["build_remaining"] > 0.0:
+			busy += 1
+	return busy
 
 func happiness() -> int:
 	var cap := capacities()
@@ -259,6 +271,8 @@ func place_error(type: String, tx: int, ty: int) -> String:
 		return "That cannot be built."
 	if count_type(type) >= int(d["limit"]):
 		return "Limit reached for %s at Castle Level One." % d["name"]
+	if float(d.get("time", 0.0)) > 0.0 and builders_busy() >= capacities()["builders"]:
+		return "All your builders are busy. Wait for one to finish, or buy a Builder's Hut."
 	if not can_afford(d.get("cost", {})):
 		return "Not enough resources."
 	if not can_place(type, tx, ty):
@@ -275,6 +289,27 @@ func build(type: String, tx: int, ty: int) -> String:
 	if float(d["time"]) > 0.0:
 		log_line("Construction of %s has begun." % d["name"])
 	assign_professions()
+	return ""
+
+## Gems buy time: finish a building on the spot instead of waiting it out.
+func rush_cost(b: Dictionary) -> int:
+	return maxi(5, int(ceil(float(b["build_remaining"]) / 3.0)))
+
+func rush_error(b: Dictionary) -> String:
+	if is_built(b):
+		return "Already finished."
+	if state["resources"]["gems"] < float(rush_cost(b)):
+		return "Not enough Gems."
+	return ""
+
+func rush_build(b: Dictionary) -> String:
+	var err := rush_error(b)
+	if err != "":
+		return err
+	spend({"gems": float(rush_cost(b))})
+	b["build_remaining"] = 0.0
+	log_line("%s finished on the spot." % Config.BUILDINGS[b["type"]]["name"])
+	buildings_changed.emit()
 	return ""
 
 func move_building(b: Dictionary, tx: int, ty: int) -> bool:
@@ -416,6 +451,8 @@ func _tick(dt: float) -> void:
 				b["build_remaining"] = 0.0
 				log_line("%s is complete." % d["name"])
 				Sfx.play("done")
+				# a small trickle of Gems for finishing something, bigger builds pay a bit more
+				add_resources({"gems": clampf(round(float(d["time"]) / 5.0), 1.0, 6.0)})
 				dirty = true
 				buildings_changed.emit()
 			continue
@@ -497,6 +534,9 @@ func apply_battle_result(result: Dictionary) -> Dictionary:
 	if int(result["stars"]) > 0:
 		stats["wins"] += 1
 	stats["stars"] += int(result["stars"])
+	var gem_reward: float = [0.0, 3.0, 8.0, 15.0][clampi(int(result["stars"]), 0, 3)]
+	if gem_reward > 0.0:
+		add_resources({"gems": gem_reward})
 	var got := add_resources(result["loot"])
 	stats["looted_serge"] += int(got.get("serge", 0))
 	stats["looted_jade"] += int(got.get("jade", 0))

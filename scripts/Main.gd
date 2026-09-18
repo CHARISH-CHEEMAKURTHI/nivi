@@ -47,14 +47,14 @@ func _on_building_tapped(b: Dictionary) -> void:
 
 func _on_request_build(type: String) -> void:
 	world.start_placing(type)
-	hud.show_place_bar(type)
+	hud.show_place_bar(type, world.is_line_mode())
 
 func _on_request_move(id: int) -> void:
 	var b := Game.find_building(id)
 	if b.is_empty():
 		return
 	world.start_placing(b["type"], id)
-	hud.show_place_bar(b["type"])
+	hud.show_place_bar(b["type"], false)
 
 func _on_place_confirm() -> void:
 	var err := world.confirm_placing()
@@ -66,7 +66,7 @@ func _on_place_confirm() -> void:
 	if not world.is_placing():
 		hud.hide_place_bar()
 	else:
-		hud.show_place_bar(world.placing_type())
+		hud.show_place_bar(world.placing_type(), world.is_line_mode())
 	hud.refresh_top()
 
 func _on_place_cancel() -> void:

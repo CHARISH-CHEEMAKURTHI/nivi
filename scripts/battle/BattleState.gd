@@ -48,11 +48,11 @@ func _generate_base() -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(kingdom["seed"])
 	var list: Array = []
-	var mid := Config.GRID / 2
+	var mid := Config.BATTLE_GRID / 2
 
 	var fits := func(type: String, tx: int, ty: int) -> bool:
 		var d: Dictionary = Config.BUILDINGS[type]
-		if tx < Config.BUILD_MIN or ty < Config.BUILD_MIN or tx + int(d["w"]) > Config.BUILD_MAX or ty + int(d["h"]) > Config.BUILD_MAX:
+		if tx < Config.BATTLE_BUILD_MIN or ty < Config.BATTLE_BUILD_MIN or tx + int(d["w"]) > Config.BATTLE_BUILD_MAX or ty + int(d["h"]) > Config.BATTLE_BUILD_MAX:
 			return false
 		for o in list:
 			var od: Dictionary = Config.BUILDINGS[o["type"]]
@@ -114,8 +114,8 @@ func _generate_base() -> Array:
 	var tries := 0
 	while placed < int(kingdom["homes"]) and tries < 300:
 		tries += 1
-		var hx := Config.BUILD_MIN + rng.randi() % (Config.BUILD_MAX - Config.BUILD_MIN - 2)
-		var hy := Config.BUILD_MIN + rng.randi() % (Config.BUILD_MAX - Config.BUILD_MIN - 2)
+		var hx := Config.BATTLE_BUILD_MIN + rng.randi() % (Config.BATTLE_BUILD_MAX - Config.BATTLE_BUILD_MIN - 2)
+		var hy := Config.BATTLE_BUILD_MIN + rng.randi() % (Config.BATTLE_BUILD_MAX - Config.BATTLE_BUILD_MIN - 2)
 		if absi(hx - mid) < 10 and absi(hy - mid) < 10:
 			continue
 		if put.call("home", hx, hy):
@@ -124,13 +124,13 @@ func _generate_base() -> Array:
 
 # ---------------------------------------------------------------- pathfinding
 func _rebuild_grid() -> void:
-	_astar.region = Rect2i(0, 0, Config.GRID, Config.GRID)
+	_astar.region = Rect2i(0, 0, Config.BATTLE_GRID, Config.BATTLE_GRID)
 	_astar.cell_size = Vector2(1, 1)
 	_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	_astar.update()
-	for y in Config.GRID:
-		for x in Config.GRID:
+	for y in Config.BATTLE_GRID:
+		for x in Config.BATTLE_GRID:
 			_astar.set_point_solid(Vector2i(x, y), false)
 			_astar.set_point_weight_scale(Vector2i(x, y), 1.0)
 	for b in buildings:
@@ -159,7 +159,7 @@ func _ring_tiles(b: Dictionary) -> Array:
 				continue
 			if not inside_x and not inside_y:
 				continue      # corners are out of reach
-			if x < 0 or y < 0 or x >= Config.GRID or y >= Config.GRID:
+			if x < 0 or y < 0 or x >= Config.BATTLE_GRID or y >= Config.BATTLE_GRID:
 				continue
 			if _astar.is_point_solid(Vector2i(x, y)):
 				continue
@@ -169,7 +169,7 @@ func _ring_tiles(b: Dictionary) -> Array:
 func _path_to(from: Vector2, goals: Array) -> Array:
 	if goals.is_empty():
 		return []
-	var start := Vector2i(clampi(int(from.x), 0, Config.GRID - 1), clampi(int(from.y), 0, Config.GRID - 1))
+	var start := Vector2i(clampi(int(from.x), 0, Config.BATTLE_GRID - 1), clampi(int(from.y), 0, Config.BATTLE_GRID - 1))
 	var best: Array = []
 	var best_len := 1e9
 	for g in goals:
@@ -189,7 +189,7 @@ func available_counts() -> Dictionary:
 	return c
 
 func can_deploy_at(tile: Vector2i) -> bool:
-	if tile.x < 1 or tile.y < 1 or tile.x >= Config.GRID - 1 or tile.y >= Config.GRID - 1:
+	if tile.x < 1 or tile.y < 1 or tile.x >= Config.BATTLE_GRID - 1 or tile.y >= Config.BATTLE_GRID - 1:
 		return false
 	for j in range(-1, 2):
 		for i in range(-1, 2):
@@ -373,7 +373,7 @@ func move_to(tile: Vector2i, unit_id: int) -> void:
 	var u := find_unit(unit_id)
 	if u.is_empty() or u["dead"]:
 		return
-	if tile.x < 0 or tile.y < 0 or tile.x >= Config.GRID or tile.y >= Config.GRID:
+	if tile.x < 0 or tile.y < 0 or tile.x >= Config.BATTLE_GRID or tile.y >= Config.BATTLE_GRID:
 		return
 	if _astar.is_point_solid(tile):
 		return
