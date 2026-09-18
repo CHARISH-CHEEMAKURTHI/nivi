@@ -1,4 +1,9 @@
-node_modules/
-.DS_Store
+# Godot's import cache and generated data
+.godot/
+.import/
+export_presets.cfg.local
+
+# Build output
+builds/
 *.log
-screenshots/
+.DS_Store
