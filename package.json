@@ -1,0 +1,12 @@
+{
+  "name": "nivi",
+  "version": "0.1.0",
+  "description": "Kingdom-builder demo (Castle Level One) - a 2D pixel-art base builder in the spirit of Clash of Clans. HTML5 + Canvas, no build step.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
