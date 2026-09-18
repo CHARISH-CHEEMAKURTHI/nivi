@@ -22,7 +22,8 @@ var end_reason := ""
 var available: Array = []           ## roster entries not yet deployed
 var king_available := false
 var king_deployed := false
-var selected_id := 0
+var selected_id := 0            ## a single already-committed unit, tapped for Hold/Proceed micromanagement
+var selected_ids: Array = []    ## soldiers picked in the staging area, pending a squad command
 
 var loot := {"serge": 0.0, "jade": 0.0}
 var _loot_total := {}
@@ -198,37 +199,47 @@ func can_deploy_at(tile: Vector2i) -> bool:
 				return false
 	return true
 
-func deploy(type: String, tile: Vector2i) -> String:
+## Two rows just inside the map edge, at y < BATTLE_BUILD_MIN, where no
+## enemy building can ever be generated -- a standing area safely clear of
+## the base where every deployed soldier (and their bonded Nivians) wait on
+## a squad command instead of wandering in and fighting on their own.
+func _staging_tile(index: int) -> Vector2i:
+	var span: int = Config.BATTLE_GRID - 4
+	return Vector2i(2 + (index % span), mini(index / span, Config.BATTLE_BUILD_MIN - 1))
+
+func deploy(type: String, tile := Vector2i(-1, -1)) -> String:
 	if ended:
 		return "The raid is over."
-	if not can_deploy_at(tile):
-		return "Drop them clear of enemy buildings."
-	var roster_id := 0
-	var bonded: Array = []
 	if type == "king":
 		if not king_available or king_deployed:
 			return "The King is not available."
+		if not can_deploy_at(tile):
+			return "Drop him clear of enemy buildings."
 		king_deployed = true
-	else:
-		var idx := -1
-		for i in available.size():
-			if available[i]["type"] == type:
-				idx = i
-				break
-		if idx < 0:
-			return "No more of those."
-		roster_id = int(available[idx]["id"])
-		bonded = available[idx].get("bonded", [])
-		available.remove_at(idx)
-	var soldier_id := _spawn_unit(type, tile, roster_id)
-	# A soldier's bonded Nivians fight only when their soldier is sent in --
-	# they land beside them and answer the same orders, not deployed apart.
+		_spawn_unit("king", tile, 0)
+		started = true
+		return ""
+	var idx := -1
+	for i in available.size():
+		if available[i]["type"] == type:
+			idx = i
+			break
+	if idx < 0:
+		return "No more of those."
+	var roster_id := int(available[idx]["id"])
+	var bonded: Array = available[idx].get("bonded", [])
+	available.remove_at(idx)
+	var stage := _staging_tile(units.size())
+	# A soldier and their bonded Nivians land together in the staging area and
+	# hold there -- they never pick a fight on their own. They only move out,
+	# together, once a squad command sends them at a building.
+	var soldier_id := _spawn_unit(type, stage, roster_id, 0, "hold")
 	for creature_type in bonded:
-		_spawn_unit(str(creature_type), tile, roster_id, soldier_id)
+		_spawn_unit(str(creature_type), stage, roster_id, soldier_id, "hold")
 	started = true
 	return ""
 
-func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0) -> int:
+func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0, directive := "auto") -> int:
 	var d: Dictionary = Config.UNITS[type]
 	var id := _next_id
 	units.append({
@@ -236,11 +247,72 @@ func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0) -
 		"pos": Vector2(tile.x + TILE_CENTER + randf_range(-0.3, 0.3), tile.y + TILE_CENTER + randf_range(-0.3, 0.3)),
 		"hp": float(d["hp"]), "max_hp": float(d["hp"]), "cooldown": 0.0,
 		"target_id": 0, "wall_id": 0, "path": [], "path_i": 0, "repath": 0.0,
-		"directive": "auto", "focus_id": 0, "move_to": Vector2i(-1, -1),
+		"directive": directive, "focus_id": 0, "move_to": Vector2i(-1, -1),
 		"facing": 0.0, "dead": false, "attacking": false, "stuck_timer": 0.0, "stuck_anchor": Vector2.ZERO,
+		"committed": directive != "hold",
 	})
 	_next_id += 1
 	return id
+
+# ---------------------------------------------------------------- squads
+## Soldiers waiting in the staging area, grouped by type -- what the squad
+## picker shows. Their bonded Nivians tag along automatically and never
+## appear here on their own.
+func staged_counts() -> Dictionary:
+	var c := {}
+	for u in units:
+		if not u["dead"] and u["directive"] == "hold" and int(u.get("bonded_to", 0)) == 0 and u["type"] != "king":
+			c[u["type"]] = int(c.get(u["type"], 0)) + 1
+	return c
+
+## Marks up to `count` staged soldiers of `type` for the next squad command,
+## replacing any previous pick of that same type but keeping picks of other
+## types, so e.g. Knights and Cavalry can be combined into one order. Passing
+## 0 clears that type's pick. Returns how many were actually selected.
+func select_squad(type: String, count: int) -> int:
+	var kept: Array = []
+	for id in selected_ids:
+		var u := find_unit(id)
+		if not u.is_empty() and u["type"] != type:
+			kept.append(id)
+	selected_ids = kept
+	if count <= 0:
+		return 0
+	var picked := 0
+	for u in units:
+		if picked >= count:
+			break
+		if u["dead"] or u["directive"] != "hold" or int(u.get("bonded_to", 0)) != 0 or u["type"] != type:
+			continue
+		selected_ids.append(int(u["id"]))
+		picked += 1
+	return picked
+
+func clear_selection() -> void:
+	selected_ids.clear()
+
+## How many of `type` are currently picked for the next squad command.
+func selected_count(type: String) -> int:
+	var n := 0
+	for id in selected_ids:
+		var u := find_unit(id)
+		if not u.is_empty() and u["type"] == type:
+			n += 1
+	return n
+
+## The squad command: everything currently picked (plus their bonded
+## Nivians) marches on the named building together, and stays on it until it
+## falls or a new order is given.
+func order_attack(building_id: int) -> String:
+	if selected_ids.is_empty():
+		return "Pick some soldiers from the staging area first."
+	var b := find_building(building_id)
+	if b.is_empty() or b["hp"] <= 0.0:
+		return "That building is already destroyed."
+	for id in selected_ids:
+		focus(building_id, int(id))
+	selected_ids.clear()
+	return ""
 
 # ---------------------------------------------------------------- queries
 func building_at(tx: int, ty: int) -> Dictionary:
@@ -373,6 +445,7 @@ func focus(building_id: int, unit_id := 0) -> void:
 		u["target_id"] = 0
 		u["wall_id"] = 0
 		u["path"] = []
+		u["committed"] = true
 		u["repath"] = 0.0
 
 func hold(unit_id := 0) -> void:
@@ -384,9 +457,12 @@ func hold(unit_id := 0) -> void:
 		u["directive"] = "hold"
 		u["path"] = []
 
+## Resumes a unit paused mid-fight with Hold. Never sends a soldier straight
+## from the staging area into an unordered auto-attack -- only a unit that
+## has already been given a squad command (focus) responds to Proceed.
 func proceed(unit_id := 0) -> void:
 	for u in units:
-		if u["dead"]:
+		if u["dead"] or not u.get("committed", false):
 			continue
 		if not _matches_order(u, unit_id):
 			continue
@@ -491,7 +567,11 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 		u["target_id"] = 0
 		u["path"] = []
 		target = {}
-	if u["directive"] != "move" and target.is_empty():
+	# A unit still holding in the staging area (or freshly told to hold) never
+	# picks a target on its own -- it stands there until a squad command sends
+	# it in. Only "auto" (mopping up after its focus target fell) and "focus"
+	# pick a target for themselves; "move" and "hold" never do.
+	if u["directive"] != "move" and u["directive"] != "hold" and target.is_empty():
 		target = _choose_target(u)
 		if target.is_empty():
 			return

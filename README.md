@@ -49,10 +49,14 @@ A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
 trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
 finger drags and taps, two fingers pan and pinch-zoom together.
 
-In a raid: pick a troop card, tap open ground to send them in, tap a troop to
-select it, then tap a building to make that troop focus it. **Hold** and
-**Proceed** apply to the selection, or to everyone when nothing is selected.
-The King is deployed like a troop and walks wherever you tap.
+In a raid: pick a troop card to deploy that soldier (and their two bonded
+Nivians) straight to the staging area, well clear of the enemy base. Nobody
+fights on their own from there. Use the staging card's **-** and **+** to
+pick how many of that type join the next order, then tap a building to send
+exactly that squad at it; their bonded Nivians go with them automatically.
+Tap an already-committed troop to select it alone, then **Hold** pauses it
+and **Proceed** resumes it. The King is still deployed like a troop and
+walks wherever you tap, free of the staging area and squad orders.
 
 ## What is in the game
 
@@ -70,7 +74,7 @@ Everything the design document lists for Castle Level One, section 5:
 | **Population and bonding** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Every citizen bonds one Nivian, rarely two; a soldier bonds exactly two, who fight only when that soldier is sent into battle, never trained or sent in on their own; the King can bond up to five. Up to 15 soldiers total. |
 | **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |
 | **Credits** | Festivals and taxes move happiness and karma. Firon only bonds with a ruler holding twenty credits or more. |
-| **Raids** | Three enemy kingdoms with procedurally arranged bases. Troops pick targets, route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |
+| **Raids** | Three enemy kingdoms with procedurally arranged bases. Deployed soldiers wait in a staging area until a squad command sends a chosen number of them, with their bonded Nivians, at a chosen building; nobody attacks unordered. Troops route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |
 | **Consequence** | Soldiers who fall may be lost for good, taking their citizen with them. The rest are injured and recover, far faster once a Hospital stands. |
 
 Left for later milestones, as the document recommends: the first-person combat

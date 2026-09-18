@@ -4,6 +4,7 @@ extends CanvasLayer
 ## bottom, and the orders you can give whatever is selected.
 
 signal pick_troop(type: String)
+signal pick_squad(type: String, count: int)
 signal order_hold
 signal order_proceed
 signal order_deselect
@@ -20,6 +21,8 @@ var _hint: Label
 var _selected: Label
 var _troop_row: HBoxContainer
 var _troop_key := ""
+var _staging_row: HBoxContainer
+var _staging_key := ""
 
 func _ready() -> void:
 	layer = 10
@@ -77,6 +80,14 @@ func _ready() -> void:
 	orow.add_child(_order_button("Proceed", "GreenButton", func() -> void: order_proceed.emit()))
 	orow.add_child(_order_button("Deselect", "WoodButton", func() -> void: order_deselect.emit()))
 	orders.add_child(orow)
+
+	_staging_row = HBoxContainer.new()
+	_staging_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_staging_row.position = Vector2(0, -92)
+	_staging_row.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_staging_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_staging_row.add_theme_constant_override("separation", 10)
+	root.add_child(_staging_row)
 
 	_troop_row = HBoxContainer.new()
 	_troop_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -148,16 +159,23 @@ func refresh(deploy_type: String) -> void:
 	_loot["jade"].text = str(int(state.loot["jade"]))
 
 	var sel := state.find_unit(state.selected_id) if state.selected_id != 0 else {}
-	if sel.is_empty():
+	var squad_n := state.selected_ids.size()
+	if squad_n > 0:
+		_selected.text = "%d picked" % squad_n
+	elif sel.is_empty():
 		_selected.text = "All troops"
 	else:
 		_selected.text = "%s  %d HP" % [Config.UNITS[sel["type"]]["name"], int(ceil(sel["hp"]))]
 	if not state.started:
-		_hint.text = "Pick a troop below, then tap open ground to send them in."
+		_hint.text = "Pick a troop below to send them to the staging area."
+	elif squad_n > 0:
+		_hint.text = "Tap a building to send this squad at it."
 	elif not sel.is_empty():
 		_hint.text = "Tap the ground to move the King." if sel["type"] == "king" else "Tap a building to focus this troop."
 	else:
-		_hint.text = "Tap a troop to give it orders, or drop more from below."
+		_hint.text = "Use the staging area below to pick soldiers, or tap a deployed troop to give it orders."
+
+	_refresh_staging()
 
 	var counts := state.available_counts()
 	var types: Array = counts.keys()
@@ -200,6 +218,70 @@ func _troop_card(type: String, count: int, active: bool) -> Control:
 		Sfx.play("tap")
 		pick_troop.emit(type))
 	col.add_child(pick)
+	card.add_child(col)
+	return card
+
+## The staging area: soldiers already deployed, standing by for a squad
+## command. Rebuilt whenever the staged counts or the current pick change.
+func _refresh_staging() -> void:
+	var counts := state.staged_counts()
+	var types: Array = counts.keys()
+	types.sort()
+	var picks := {}
+	for type in types:
+		picks[type] = state.selected_count(type)
+	var key := str(counts) + str(picks)
+	if key == _staging_key:
+		return
+	_staging_key = key
+	for c in _staging_row.get_children():
+		c.queue_free()
+	if types.is_empty():
+		return
+	for type in types:
+		_staging_row.add_child(_staging_card(type, int(counts[type]), int(picks[type])))
+
+func _staging_card(type: String, staged: int, picked: int) -> Control:
+	var card := PanelContainer.new()
+	card.theme_type_variation = "Card"
+	if picked > 0:
+		card.modulate = Color(1.0, 0.92, 0.6)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.add_child(Thumb.unit(type, 60))
+	var n := Label.new()
+	n.text = "%s  staged %d" % [Config.UNITS[type]["name"], staged]
+	n.add_theme_font_size_override("font_size", 13)
+	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(n)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 6)
+	var minus := Button.new()
+	minus.text = "-"
+	minus.theme_type_variation = "WoodButton"
+	minus.custom_minimum_size = Vector2(34, 0)
+	minus.disabled = picked <= 0
+	minus.pressed.connect(func() -> void:
+		Sfx.play("tap")
+		pick_squad.emit(type, picked - 1))
+	row.add_child(minus)
+	var count_l := Label.new()
+	count_l.text = str(picked)
+	count_l.theme_type_variation = "ValueLabel"
+	count_l.custom_minimum_size = Vector2(28, 0)
+	count_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	row.add_child(count_l)
+	var plus := Button.new()
+	plus.text = "+"
+	plus.theme_type_variation = "GreenButton"
+	plus.custom_minimum_size = Vector2(34, 0)
+	plus.disabled = picked >= staged
+	plus.pressed.connect(func() -> void:
+		Sfx.play("tap")
+		pick_squad.emit(type, picked + 1))
+	row.add_child(plus)
+	col.add_child(row)
 	card.add_child(col)
 	return card
 

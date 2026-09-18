@@ -45,6 +45,8 @@ func _run_demo() -> void:
 	match _demo:
 		"jam":
 			_run_jam_test()
+		"squad":
+			_run_squad_test()
 		"verify":
 			await _run_verify()
 		"econ":
@@ -99,17 +101,24 @@ func _run_demo() -> void:
 		"menu":
 			main.hud.show_menu()
 		"battle":
-			for t in ["knight", "knight", "cavalry", "garuan", "unitone", "unitone", "firon"]:
-				Game.add_unit(t)
+			var kin: Array = Config.CREATURES.keys()
+			var soldier_types := ["knight", "knight", "cavalry", "cavalry"]
+			for i in soldier_types.size():
+				var bonded: Array[String] = [kin[i % kin.size()], kin[(i + 1) % kin.size()]]
+				Game.add_unit(soldier_types[i], 0, bonded)
 			main._on_attack("greywater")
 			var b: BattleState = main.battle
-			var spots := [Vector2i(6, 18), Vector2i(7, 20), Vector2i(6, 22), Vector2i(8, 17),
-				Vector2i(7, 24), Vector2i(9, 21), Vector2i(8, 26), Vector2i(10, 19)]
-			var i := 0
 			for u in b.available.duplicate():
-				b.deploy(u["type"], spots[i % spots.size()])
-				i += 1
-			b.deploy("king", spots[i % spots.size()])
+				b.deploy(u["type"])
+			b.select_squad("knight", 99)
+			b.select_squad("cavalry", 99)
+			var castle := {}
+			for bld in b.buildings:
+				if bld["type"] == "castle":
+					castle = bld
+			if not castle.is_empty():
+				b.order_attack(int(castle["id"]))
+			b.deploy("king", Vector2i(6, 18))
 			# run the raid fast so a capture can show the fight, not the march
 			Engine.time_scale = 7.0
 
@@ -117,20 +126,31 @@ func _run_demo() -> void:
 func _simulate_raid() -> void:
 	var kingdom: Dictionary = Config.ENEMY_KINGDOMS[1]
 	var roster := []
-	var types := ["knight", "knight", "cavalry", "garuan", "garuan", "unitone", "unitone", "firon"]
-	for i in types.size():
-		roster.append({"id": i + 1, "type": types[i]})
+	var soldier_types := ["knight", "knight", "knight", "cavalry", "cavalry"]
+	var kin: Array = Config.CREATURES.keys()
+	for i in soldier_types.size():
+		var bonded: Array[String] = [kin[i % kin.size()], kin[(i + 1) % kin.size()]]
+		roster.append({"id": i + 1, "type": soldier_types[i], "bonded": bonded})
 	var b := BattleState.new(kingdom, roster, true)
-	var spots := [Vector2i(4, 20), Vector2i(4, 18), Vector2i(4, 22), Vector2i(5, 19),
-		Vector2i(5, 21), Vector2i(3, 20), Vector2i(4, 16), Vector2i(4, 24)]
-	var i2 := 0
 	for u in roster:
-		var e := b.deploy(u["type"], spots[i2 % spots.size()])
+		var e := b.deploy(u["type"])
 		if e != "":
 			print("[sim] deploy failed: ", e)
-		i2 += 1
 	b.deploy("king", Vector2i(3, 18))
-	print("[sim] deployed ", b.units.size(), " of ", roster.size() + 1)
+	print("[sim] deployed ", b.units.size(), " units (", roster.size(), " soldiers + bonded Nivians + king)")
+
+	# a balance check, not a command-UI check: send the whole staged army at
+	# the enemy Castle in one squad order, same as a player would
+	var castle := {}
+	for bld in b.buildings:
+		if bld["type"] == "castle":
+			castle = bld
+	b.select_squad("knight", 99)
+	b.select_squad("cavalry", 99)
+	if not castle.is_empty():
+		var order_err := b.order_attack(int(castle["id"]))
+		if order_err != "":
+			print("[sim] order_attack failed: ", order_err)
 	var t := 0.0
 	var step := 1.0 / 30.0
 	while not b.ended and t < 200.0:
@@ -428,10 +448,12 @@ func _run_jam_test() -> void:
 		if x != 5:
 			b.buildings.append({"id": 900 + x, "type": "wall", "x": x, "y": 10, "hp": 300.0, "max_hp": 300.0, "cool": 0.0})
 	b._rebuild_grid()
-	var err1 := b.deploy("knight", Vector2i(5, 7))
-	var err2 := b.deploy("knight", Vector2i(5, 13))
+	# spawned directly at exact tiles (bypassing the staging area) since this
+	# test is about the pathfinding jam fix, not squad deployment
+	b._spawn_unit("knight", Vector2i(5, 7), 0)
+	b._spawn_unit("knight", Vector2i(5, 13), 0)
 	if b.units.size() < 2:
-		print("[jam] ABORT: deploy failed err1='%s' err2='%s'" % [err1, err2])
+		print("[jam] ABORT: spawn failed")
 		get_tree().quit()
 		return
 	var u1: Dictionary = b.units[0]
@@ -454,4 +476,67 @@ func _run_jam_test() -> void:
 	print("[jam] u1 moved=%.2f u2 moved=%.2f both_through_by=%s" % [
 		u1["pos"].distance_to(start1), u2["pos"].distance_to(start2),
 		("%.1fs" % unstuck_at) if unstuck_at > 0.0 else "NEVER"])
+	get_tree().quit()
+
+## Headless check of the staging/squad-command system: deployed soldiers must
+## sit idle in the staging area until an explicit squad order sends them (and
+## their bonded Nivians) at a chosen building, never auto-attacking on their
+## own the way the old free-placement deployment did.
+func _run_squad_test() -> void:
+	var kingdom: Dictionary = Config.ENEMY_KINGDOMS[0]
+	var roster := [
+		{"id": 1, "type": "knight", "bonded": ["unitone", "garuan"]},
+		{"id": 2, "type": "knight", "bonded": ["unitone", "firon"]},
+		{"id": 3, "type": "cavalry", "bonded": ["garuan", "garuan"]},
+	]
+	var b := BattleState.new(kingdom, roster, false)
+	for u in roster:
+		var e := b.deploy(u["type"])
+		if e != "":
+			print("[squad] deploy failed: ", e)
+	print("[squad] staged after deploy: %s (expect knight=2 cavalry=1)" % [b.staged_counts()])
+	print("[squad] total units in staging (soldiers + bonded Nivians): %d (expect 9)" % b.units.size())
+
+	# nobody has been ordered anywhere yet -- run the clock and confirm not one
+	# hit point of damage happens on its own
+	var step := 1.0 / 30.0
+	for i in 180:
+		b.update(step)
+	print("[squad] destruction after 6s with no orders: %.0f%% (expect 0%%)" % (b.destruction() * 100.0))
+
+	# pick both knights (their four bonded Nivians come along) and send them
+	# at the enemy Castle
+	var picked := b.select_squad("knight", 2)
+	var castle := {}
+	for bld in b.buildings:
+		if bld["type"] == "castle":
+			castle = bld
+	var order_err := b.order_attack(int(castle["id"]))
+	print("[squad] picked=%d order_err='%s' selection cleared after order=%s" % [picked, order_err, b.selected_ids.is_empty()])
+
+	# the un-ordered cavalry (and its two bonded Garuans) must still be idle
+	var cav := {}
+	for u in b.units:
+		if u["type"] == "cavalry":
+			cav = u
+	var cav_start: Vector2 = cav["pos"]
+
+	var t := 0.0
+	var moved := false
+	while t < 25.0 and not moved:
+		b.update(step)
+		t += step
+		for u in b.units:
+			if u["type"] == "knight" and u["attacking"]:
+				moved = true
+				break
+	print("[squad] ordered knights reached and struck the Castle by t=%.1fs (expect well under 25s)" % t)
+	print("[squad] un-ordered cavalry drifted=%.2f while its squadmates fought (expect ~0)" % cav["pos"].distance_to(cav_start))
+	for i in 300:
+		b.update(step)
+	var castle_now := {}
+	for bld in b.buildings:
+		if bld["type"] == "castle":
+			castle_now = bld
+	print("[squad] Castle HP 10s after first strike: %d/%d (expect below max)" % [int(castle_now["hp"]), int(castle_now["max_hp"])])
 	get_tree().quit()
