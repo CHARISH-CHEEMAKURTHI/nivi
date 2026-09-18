@@ -1,2 +1,224 @@
 extends Node
-## Placeholder; replaced by the full data tables in the next step.
+## All game data for Castle Level One, in one place.
+## Every number here is a PLACEHOLDER, matching the design document's note that
+## balancing values are first-pass and not final.
+
+const GRID := 40                  ## buildable tiles across
+const BUILD_MIN := 2              ## buildable area is [BUILD_MIN, BUILD_MAX)
+const BUILD_MAX := 38
+const BATTLE_TIME := 150.0        ## seconds per raid
+const SEASON_SECONDS := 60.0      ## one season of in-game time (aging tick)
+const OFFLINE_CAP := 7200.0       ## most offline seconds credited on load
+const SAVE_PATH := "user://nivi_save.json"
+const SAVE_VERSION := 1
+
+const RESOURCES := {
+	"serge": {"name": "Serge", "color": Color("ff9a3c")},
+	"jade": {"name": "Jade", "color": Color("3ddc97")},
+}
+
+const CATEGORIES := [
+	{"id": "core", "name": "Core"},
+	{"id": "resource", "name": "Mines"},
+	{"id": "military", "name": "Army"},
+	{"id": "defense", "name": "Defense"},
+	{"id": "support", "name": "Town"},
+]
+
+## Section 5 of the design document: the confirmed Castle Level One building set.
+const BUILDINGS := {
+	"castle": {
+		"name": "Castle", "category": "core", "w": 4, "h": 4, "hp": 1500, "buildable": false, "limit": 1,
+		"cost": {}, "time": 0.0, "loot": 0.30,
+		"desc": "Seat of the throne and a bunker. Shelters citizens during attacks. Upgrading to Castle Level Two is beyond this demo.",
+		"provides": {"pop_cap": 6, "storage": {"serge": 1000, "jade": 1000}},
+	},
+	"barracks_h": {
+		"name": "Barracks H", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
+		"cost": {"serge": 150}, "time": 10.0,
+		"desc": "Human training ground. Enlists citizens as Knights and Cavalry. Shares its yard with Barracks L but keeps its own queue.",
+		"trains": ["knight", "cavalry"],
+	},
+	"barracks_l": {
+		"name": "Barracks L", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
+		"cost": {"jade": 150}, "time": 10.0,
+		"desc": "Creature training ground. Performs the summoning ritual that brings creatures over from the other world.",
+		"trains": ["unitone", "firon", "garuan"],
+	},
+	"serge_mine": {
+		"name": "Serge Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
+		"cost": {"jade": 100}, "time": 6.0, "loot": 0.10,
+		"desc": "Mines Serge from the rock. Tap to collect. Fills up if left alone.",
+		"produces": {"resource": "serge", "per_second": 1.2, "capacity": 300},
+	},
+	"jade_mine": {
+		"name": "Jade Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
+		"cost": {"serge": 100}, "time": 6.0, "loot": 0.10,
+		"desc": "Mines Jade crystal. Tap to collect. Fills up if left alone.",
+		"produces": {"resource": "jade", "per_second": 1.2, "capacity": 300},
+	},
+	"serge_storage": {
+		"name": "Serge Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 2,
+		"cost": {"jade": 200}, "time": 12.0, "loot": 0.25,
+		"desc": "Dedicated store for harvested Serge. Raises how much the kingdom can hold.",
+		"provides": {"storage": {"serge": 1500}},
+	},
+	"jade_storage": {
+		"name": "Jade Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 2,
+		"cost": {"serge": 200}, "time": 12.0, "loot": 0.25,
+		"desc": "Dedicated store for harvested Jade. Raises how much the kingdom can hold.",
+		"provides": {"storage": {"jade": 1500}},
+	},
+	"home": {
+		"name": "Home", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 6,
+		"cost": {"serge": 80}, "time": 5.0,
+		"desc": "Houses citizens. More homes let the population grow, and population feeds the creature roster.",
+		"provides": {"pop_cap": 4},
+	},
+	"farm": {
+		"name": "Farm", "category": "support", "w": 3, "h": 2, "hp": 250, "limit": 3,
+		"cost": {"serge": 100}, "time": 6.0,
+		"desc": "Feeds the kingdom. Well-fed citizens are happier.",
+		"provides": {"happiness": 8, "profession": "Farmer"},
+	},
+	"shop": {
+		"name": "Shop", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 2,
+		"cost": {"jade": 120}, "time": 6.0,
+		"desc": "A market stall. Trade lifts the mood of the town.",
+		"provides": {"happiness": 5, "profession": "Merchant"},
+	},
+	"tavern": {
+		"name": "Tavern", "category": "support", "w": 3, "h": 2, "hp": 350, "limit": 1,
+		"cost": {"serge": 120, "jade": 40}, "time": 8.0,
+		"desc": "Where the people unwind. The biggest single lift to happiness.",
+		"provides": {"happiness": 10, "profession": "Innkeeper"},
+	},
+	"hospital": {
+		"name": "Hospital", "category": "support", "w": 3, "h": 2, "hp": 400, "limit": 1,
+		"cost": {"jade": 200}, "time": 12.0,
+		"desc": "Treats heavily injured soldiers and creatures so they rejoin the roster far sooner.",
+		"provides": {"heal_speed": 4, "profession": "Healer"},
+	},
+	"road": {
+		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 200,
+		"cost": {"serge": 5}, "time": 0.0, "flat": true, "passable": true,
+		"desc": "Cobbled path. Decorative, but a tidy kingdom is a happy one.",
+		"provides": {"happiness": 0.25},
+	},
+	"wall": {
+		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 80,
+		"cost": {"serge": 20}, "time": 0.0, "wall": true,
+		"desc": "Defensive perimeter. Attackers must break through or walk around.",
+	},
+	"guard_station": {
+		"name": "Guard Station", "category": "military", "w": 2, "h": 2, "hp": 500, "limit": 2,
+		"cost": {"serge": 100}, "time": 8.0,
+		"desc": "Posting for soldiers and law enforcers on defence duty. Houses part of your army.",
+		"provides": {"housing": 8},
+	},
+	"outpost": {
+		"name": "Outpost", "category": "military", "w": 2, "h": 2, "hp": 450, "limit": 2,
+		"cost": {"jade": 150}, "time": 8.0,
+		"desc": "Additional defensive posting structure. Houses part of your army.",
+		"provides": {"housing": 8},
+	},
+	"cavalry_outpost": {
+		"name": "Cavalry Outpost", "category": "military", "w": 3, "h": 2, "hp": 500, "limit": 1,
+		"cost": {"serge": 120, "jade": 120}, "time": 10.0,
+		"desc": "Law Enforcer Ground Cavalry Outpost. Houses only cavalry: law enforcers who ride their creature into battle.",
+		"provides": {"housing": 6, "housing_for": "cavalry"},
+	},
+	"cannon": {
+		"name": "Short-Fire Cannon", "category": "defense", "w": 2, "h": 2, "hp": 350, "limit": 3,
+		"cost": {"serge": 150, "jade": 50}, "time": 10.0,
+		"desc": "Cannon Type A. Short range but a very fast rate of fire, charged by a law enforcer channelling their creature's energy.",
+		"defense": {"range": 4.0, "rate": 0.35, "damage": 4.0},
+	},
+}
+
+## Section 7: type ratios (Normal : Fire : Water). Placeholder values.
+const TYPE_RATIOS := {
+	"normal": {"strength": 2, "magic": 1, "defense": 4},
+	"fire": {"strength": 1, "magic": 3, "defense": 2},
+	"water": {"strength": 1, "magic": 3, "defense": 2},
+}
+
+## Section 7: the three sample creatures and their own stat layer.
+const CREATURES := {
+	"unitone": {"name": "Unitone", "base": "Horse", "type": "water", "speed": 3, "hp": 2, "housing": 1},
+	"firon": {"name": "Firon", "base": "Bear", "type": "fire", "speed": 1, "hp": 3, "housing": 2},
+	"garuan": {"name": "Garuan", "base": "Kangaroo", "type": "normal", "speed": 2, "hp": 2, "housing": 1},
+}
+
+const UNITS := {
+	"knight": {
+		"name": "Knight", "kind": "human", "barracks": "barracks_h",
+		"cost": {"serge": 40}, "time": 8.0, "housing": 1,
+		"hp": 70.0, "atk": 15.0, "rate": 1.0, "range": 0.7, "speed": 1.7, "armor": 0.10, "prefer": "any",
+		"desc": "Troop Soldier. Has a creature companion but does not ride it into battle. A sturdy all-rounder.",
+	},
+	"cavalry": {
+		"name": "Cavalry", "kind": "human", "barracks": "barracks_h",
+		"cost": {"serge": 60, "jade": 40}, "time": 15.0, "housing": 3,
+		"hp": 130.0, "atk": 27.0, "rate": 0.8, "range": 0.7, "speed": 2.7, "armor": 0.10, "prefer": "defense",
+		"desc": "Cavalry Soldier. Rides their creature into battle. Fast, and goes straight for the defences.",
+	},
+	"unitone": {
+		"name": "Unitone", "kind": "creature", "barracks": "barracks_l",
+		"cost": {"jade": 40}, "time": 10.0, "housing": 1, "element": "water",
+		"hp": 64.0, "atk": 20.0, "rate": 1.0, "range": 3.0, "speed": 2.1, "armor": 0.10, "prefer": "any",
+		"desc": "Water-type horse. Quick, and casts water bolts from a short distance.",
+	},
+	"firon": {
+		"name": "Firon", "kind": "creature", "barracks": "barracks_l",
+		"cost": {"jade": 70}, "time": 14.0, "housing": 2, "element": "fire", "credits_required": 20,
+		"hp": 96.0, "atk": 20.0, "rate": 1.0, "range": 3.0, "speed": 1.5, "armor": 0.10, "prefer": "any",
+		"desc": "Fire-type bear. Slow and tough, hurls fire from a distance. Only bonds with a well-regarded ruler.",
+	},
+	"garuan": {
+		"name": "Garuan", "kind": "creature", "barracks": "barracks_l",
+		"cost": {"jade": 40}, "time": 10.0, "housing": 1, "element": "normal",
+		"hp": 64.0, "atk": 15.0, "rate": 1.0, "range": 0.7, "speed": 1.8, "armor": 0.20, "prefer": "resource",
+		"desc": "Normal-type kangaroo. Heavily armoured brawler that loves to raid mines and stores.",
+	},
+	"king": {
+		"name": "The King", "kind": "hero", "hidden": true,
+		"housing": 0, "hp": 220.0, "atk": 30.0, "rate": 0.7, "range": 0.8, "speed": 2.2, "armor": 0.15, "prefer": "any",
+		"desc": "You, present on the battlefield and directed by hand.",
+	},
+}
+
+## Section 6: creature allocation by profession.
+const CREATURE_SLOTS := {"civilian": 1, "soldier": 2, "king": 5}
+
+const ENEMY_KINGDOMS := [
+	{"id": "ashford", "name": "Ashford Hamlet", "seed": 11, "cannons": 1, "wall_rings": 1, "homes": 3,
+		"loot": {"serge": 260, "jade": 220}, "desc": "A sleepy hamlet behind one ring of wall. A good first raid."},
+	{"id": "greywater", "name": "Greywater Keep", "seed": 23, "cannons": 2, "wall_rings": 2, "homes": 4,
+		"loot": {"serge": 420, "jade": 380}, "desc": "Walled twice over, with two cannons covering the gates."},
+	{"id": "emberfall", "name": "Emberfall", "seed": 37, "cannons": 3, "wall_rings": 2, "homes": 5,
+		"loot": {"serge": 640, "jade": 600}, "desc": "The strongest Castle One kingdom on the border. Bring everything."},
+]
+
+const DECREES := {
+	"festival": {"name": "Hold a Festival", "cost": {"serge": 60, "jade": 60}, "happiness": 15, "credits": 5, "cooldown": 45.0,
+		"desc": "Spend resources on the people. Happiness up, credits up."},
+	"tax": {"name": "Raise Taxes", "gain": {"serge": 120, "jade": 120}, "happiness": -15, "credits": -5, "cooldown": 45.0,
+		"desc": "Squeeze the population for resources. Happiness down, credits down."},
+}
+
+const NAMES := ["Aldric", "Bea", "Cassian", "Dara", "Edwin", "Fen", "Greta", "Hale", "Ilsa", "Joren",
+	"Kira", "Lorne", "Mira", "Nils", "Orla", "Piet", "Quinn", "Rosa", "Sten", "Tova", "Ulric", "Vera", "Wren", "Yara", "Zed"]
+
+## Turn a tile coordinate into the world position of that tile's centre.
+static func tile_to_world(tx: int, ty: int) -> Vector3:
+	return Vector3(float(tx) - GRID * 0.5 + 0.5, 0.0, float(ty) - GRID * 0.5 + 0.5)
+
+## Turn a world position into the tile it falls on.
+static func world_to_tile(p: Vector3) -> Vector2i:
+	return Vector2i(int(floor(p.x + GRID * 0.5)), int(floor(p.z + GRID * 0.5)))
+
+## World position for the centre of a building's footprint.
+static func building_origin(tx: int, ty: int, w: int, h: int) -> Vector3:
+	var c := tile_to_world(tx, ty)
+	return c + Vector3((w - 1) * 0.5, 0.0, (h - 1) * 0.5)

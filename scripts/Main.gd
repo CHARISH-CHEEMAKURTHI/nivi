@@ -1,42 +1,204 @@
 extends Node3D
-## Showcase: every Castle Level One building laid out on the island.
+## Application root. Runs the kingdom, and swaps to the raid view and back.
 
-const LAYOUT := [
-	["castle", 0, -2], ["barracks_h", -6, -6], ["barracks_l", 6, -6],
-	["serge_mine", -10, 0], ["jade_mine", 10, 0],
-	["serge_storage", -10, 4], ["jade_storage", 10, 4],
-	["home", -5, 3], ["home", -2, 3], ["home", 1, 3],
-	["farm", 5, 4], ["shop", -8, -3], ["tavern", 5, 8], ["hospital", -5, 8],
-	["guard_station", -9, -9], ["outpost", 9, -9], ["cavalry_outpost", 1, 8],
-	["cannon", -3, -7], ["cannon", 3, -7],
-]
+var hud: Hud
+var world: BaseWorld
+var battle_world: BattleWorld
+var battle_hud: BattleHud
+var battle: BattleState
+var _save_timer := 0.0
+var _results_shown := false
 
 func _ready() -> void:
-	add_child(WorldEnv.make_environment())
-	add_child(WorldEnv.make_sun())
-	add_child(Island.new())
+	_enter_base()
 
-	for entry in LAYOUT:
-		var type: String = entry[0]
-		var fp := Buildings.footprint(type)
-		var mi := MeshBuilder.instance(Buildings.build(type))
-		# snap to the tile grid: a footprint's centre lands on a half-tile when the
-		# footprint is odd, on a whole tile when it is even
-		mi.position = Vector3(float(entry[1]) + (0.0 if fp.x % 2 == 0 else 0.5), 0.0,
-			float(entry[2]) + (0.0 if fp.y % 2 == 0 else 0.5))
-		add_child(mi)
+# ---------------------------------------------------------------- base
+func _enter_base() -> void:
+	world = BaseWorld.new()
+	add_child(world)
+	hud = Hud.new()
+	hud.world = world
+	add_child(hud)
+	world.building_tapped.connect(_on_building_tapped)
+	world.ground_tapped.connect(func(_tile: Vector2i) -> void: hud.hide_panel())
+	world.placement_changed.connect(func(ok: bool) -> void: hud.set_place_valid(ok))
+	hud.request_build.connect(_on_request_build)
+	hud.request_move.connect(_on_request_move)
+	hud.request_place_confirm.connect(_on_place_confirm)
+	hud.request_place_cancel.connect(_on_place_cancel)
+	hud.request_attack.connect(_on_attack)
+	hud.request_new_game.connect(_on_new_game)
+	world.rig.focus_on(Vector3.ZERO)
+	world.rig.set_zoom(26.0)
 
-	# a short stretch of wall and road to show them in context
-	for i in 9:
-		var w := MeshBuilder.instance(Buildings.build("wall"))
-		w.position = Vector3(-4.5 + i, 0, -10.5)
-		add_child(w)
-	for i in 6:
-		var r := MeshBuilder.instance(Buildings.build("road"))
-		r.position = Vector3(0.5, 0.0, 1.5 + i)
-		add_child(r)
+func _on_building_tapped(b: Dictionary) -> void:
+	var d: Dictionary = Config.BUILDINGS[b["type"]]
+	# tapping a full mine collects it rather than opening the panel again
+	if d.has("produces") and Game.is_built(b) and b["stored"] >= float(d["produces"]["capacity"]) * 0.18:
+		var got := Game.collect(b)
+		if got > 0.0:
+			hud.toast("+%d %s" % [int(got), Config.RESOURCES[d["produces"]["resource"]]["name"]])
+			world.select(b)
+			return
+	world.select(b)
+	hud.show_building(b)
 
-	var rig := CameraRig.new()
-	add_child(rig)
-	rig.set_zoom(15.0)
-	rig.focus_on(Vector3(0, 0, -2))
+func _on_request_build(type: String) -> void:
+	world.start_placing(type)
+	hud.show_place_bar(type)
+
+func _on_request_move(id: int) -> void:
+	var b := Game.find_building(id)
+	if b.is_empty():
+		return
+	world.start_placing(b["type"], id)
+	hud.show_place_bar(b["type"])
+
+func _on_place_confirm() -> void:
+	var err := world.confirm_placing()
+	if err != "":
+		hud.toast(err)
+		return
+	if not world.is_placing():
+		hud.hide_place_bar()
+	else:
+		hud.show_place_bar(world.placing_type())
+	hud.refresh_top()
+
+func _on_place_cancel() -> void:
+	world.cancel_placing()
+	hud.hide_place_bar()
+
+func _on_new_game() -> void:
+	Game.wipe_save()
+	Game.new_game()
+	world.rebuild()
+	hud.refresh_top()
+	hud.toast("A new kingdom rises.")
+
+# ---------------------------------------------------------------- raid
+func _on_attack(kingdom_id: String) -> void:
+	var kingdom := {}
+	for k in Config.ENEMY_KINGDOMS:
+		if k["id"] == kingdom_id:
+			kingdom = k
+	if kingdom.is_empty():
+		return
+	var roster := Game.ready_units()
+	if roster.is_empty() and Game.state["king"]["status"] != "ready":
+		hud.toast("Nobody is ready to fight.")
+		return
+	Game.save_game()
+	battle = BattleState.new(kingdom, roster, Game.state["king"]["status"] == "ready")
+	_results_shown = false
+
+	world.queue_free()
+	world = null
+	hud.queue_free()
+	hud = null
+
+	battle_world = BattleWorld.new()
+	add_child(battle_world)
+	battle_world.setup(battle)
+	battle_hud = BattleHud.new()
+	battle_hud.state = battle
+	add_child(battle_hud)
+	battle_world.tapped_building.connect(_on_battle_building)
+	battle_world.tapped_ground.connect(_on_battle_ground)
+	battle_world.tapped_unit.connect(_on_battle_unit)
+	battle_hud.pick_troop.connect(_on_pick_troop)
+	battle_hud.order_hold.connect(func() -> void: battle.hold(battle.selected_id))
+	battle_hud.order_proceed.connect(func() -> void: battle.proceed(battle.selected_id))
+	battle_hud.order_deselect.connect(_on_deselect)
+	battle_hud.end_battle.connect(_on_end_battle)
+	battle_hud.refresh("")
+
+func _on_pick_troop(type: String) -> void:
+	battle_world.deploy_type = "" if battle_world.deploy_type == type else type
+	battle.selected_id = 0
+	battle_world.show_deploy_hint(battle_world.deploy_type != "")
+	battle_hud.refresh(battle_world.deploy_type)
+
+func _on_deselect() -> void:
+	battle.selected_id = 0
+	battle_world.deploy_type = ""
+	battle_world.show_deploy_hint(false)
+	battle_hud.refresh("")
+
+func _on_battle_unit(u: Dictionary) -> void:
+	battle.selected_id = int(u["id"])
+	battle_world.deploy_type = ""
+	battle_world.show_deploy_hint(false)
+	battle_hud.refresh("")
+
+func _on_battle_building(b: Dictionary) -> void:
+	if battle_world.deploy_type != "":
+		return
+	battle.focus(int(b["id"]), battle.selected_id)
+	battle_hud.refresh("")
+
+func _on_battle_ground(tile: Vector2i) -> void:
+	if battle_world.deploy_type != "":
+		var err := battle.deploy(battle_world.deploy_type, tile)
+		if err != "":
+			return
+		if battle_world.deploy_type == "king" or int(battle.available_counts().get(battle_world.deploy_type, 0)) == 0:
+			battle_world.deploy_type = ""
+			battle_world.show_deploy_hint(false)
+		battle_hud.refresh(battle_world.deploy_type)
+		return
+	if battle.selected_id != 0:
+		battle.move_to(tile, battle.selected_id)
+
+func _on_end_battle() -> void:
+	if battle == null or battle.ended:
+		return
+	battle._end("You called the retreat." if battle.started else "No troops were committed.")
+
+func _finish_battle() -> void:
+	battle = null
+	battle_world.queue_free()
+	battle_world = null
+	battle_hud.queue_free()
+	battle_hud = null
+	_enter_base()
+
+# ---------------------------------------------------------------- loop
+func _process(delta: float) -> void:
+	Game.advance(delta)
+	if hud != null:
+		_save_timer += delta
+		if _save_timer > 15.0:
+			_save_timer = 0.0
+			Game.save_game()
+	if battle != null:
+		battle_hud.refresh(battle_world.deploy_type)
+		if battle.ended and not _results_shown:
+			_results_shown = true
+			if not battle.started:
+				_finish_battle()
+				return
+			var result := battle.result()
+			var outcome := Game.apply_battle_result(result)
+			Game.save_game()
+			battle_hud.show_results_via(result, outcome, _finish_battle)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
+		Game.save_game()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and (event as InputEventKey).pressed:
+		match (event as InputEventKey).keycode:
+			KEY_ESCAPE:
+				if world != null and world.is_placing():
+					_on_place_cancel()
+				elif hud != null:
+					hud.close_modal()
+					hud.hide_panel()
+			KEY_B:
+				if hud != null:
+					hud.show_build("resource")
+			KEY_C:
+				if hud != null:
+					hud._collect_all()

@@ -14,7 +14,7 @@ static func material() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.92
-	m.specular = 0.12
+	m.metallic_specular = 0.12
 	return m
 
 ## Wrap a built mesh in a ready-to-use instance with the shared material and
