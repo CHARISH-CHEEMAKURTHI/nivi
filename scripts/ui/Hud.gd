@@ -178,26 +178,13 @@ func _build_top(root: Control) -> void:
 		_res_fill[res] = bar
 		_res_label[res] = value
 
-	# Gems have no storage building and no cap worth showing as a bar, so this
-	# one is just an icon and a count, stacked under Serge and Jade.
-	var gem_plaque := PanelContainer.new()
-	gem_plaque.theme_type_variation = "Plaque"
-	var gem_row := HBoxContainer.new()
-	gem_row.add_theme_constant_override("separation", 8)
-	gem_row.add_child(_gem("gems"))
-	var gem_value := _label("0", "ValueLabel")
-	gem_row.add_child(gem_value)
-	gem_plaque.add_child(gem_row)
-	bars.add_child(gem_plaque)
-	_res_label["gems"] = gem_value
-
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 7)
 	stats.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	stats.position = Vector2(0, 14)
 	stats.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	root.add_child(stats)
-	for entry in [["pop", "Pop"], ["joy", "Joy"], ["credits", "Credits"], ["army", "Army"], ["builders", "Builders"], ["season", "Season"]]:
+	for entry in [["pop", "Pop"], ["joy", "Joy"], ["credits", "Credits"], ["army", "Army"], ["season", "Season"]]:
 		var plaque2 := PanelContainer.new()
 		plaque2.theme_type_variation = "Plaque"
 		var row2 := HBoxContainer.new()
@@ -219,14 +206,12 @@ func refresh_top() -> void:
 		var max_v: float = maxf(cap["storage"][res], 1.0)
 		_res_fill[res].value = clampf(have / max_v, 0.0, 1.0)
 		_res_label[res].text = "%d/%d" % [int(have), int(max_v)]
-	_res_label["gems"].text = str(int(Game.state["resources"]["gems"]))
 	var army := Game.army_summary()
 	_stat_label["pop"].text = "%d/%d" % [Game.state["citizens"].size(), cap["pop_cap"]]
 	_stat_label["joy"].text = "%d%%" % Game.happiness()
 	var credits: int = Game.state["credits"]
 	_stat_label["credits"].text = ("+%d" % credits) if credits > 0 else str(credits)
 	_stat_label["army"].text = "%d/%d" % [army["housing"], army["housing_cap"]]
-	_stat_label["builders"].text = "%d/%d" % [Game.builders_busy(), cap["builders"]]
 	_stat_label["season"].text = str(Game.state["season"])
 
 # ---------------------------------------------------------------- bottom bar
@@ -271,12 +256,12 @@ func _collect_all() -> void:
 func _build_panel(root: Control) -> void:
 	_panel = PanelContainer.new()
 	_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_panel.offset_left = -430
-	_panel.offset_right = -14
 	_panel.offset_top = 78
 	_panel.offset_bottom = -96
 	_panel.visible = false
 	root.add_child(_panel)
+	_layout_panel()
+	get_viewport().size_changed.connect(_layout_panel)
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
@@ -303,6 +288,17 @@ func _build_panel(root: Control) -> void:
 	_panel_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_panel_body.add_theme_constant_override("separation", 8)
 	scroll.add_child(_panel_body)
+
+## Sized generously (so most panels never need to scroll), but always clamped
+## to fit the actual screen width -- a fixed pixel width would run off the
+## left edge of the screen on a narrow window or phone.
+func _layout_panel() -> void:
+	if _panel == null:
+		return
+	var vw: float = get_viewport().get_visible_rect().size.x
+	var width: float = clampf(vw - 28.0, 320.0, 620.0)
+	_panel.offset_left = -width - 14.0
+	_panel.offset_right = -14.0
 
 func hide_panel() -> void:
 	if _panel.visible:
@@ -409,8 +405,6 @@ func _build_card(type: String, d: Dictionary) -> Control:
 		err = "Already built"
 	elif have >= int(d["limit"]):
 		err = "Limit reached"
-	elif float(d.get("time", 0.0)) > 0.0 and Game.builders_busy() >= int(Game.capacities()["builders"]):
-		err = "Builders busy"
 	elif not Game.can_afford(d.get("cost", {})):
 		err = "Too expensive"
 	if err != "":
@@ -474,8 +468,6 @@ func show_building(b: Dictionary) -> void:
 		_row(_panel_body, "Employs", str(prov["profession"]))
 	if prov.has("heal_speed"):
 		_row(_panel_body, "Healing speed", "x%d" % int(prov["heal_speed"]))
-	if prov.has("builders"):
-		_row(_panel_body, "Builders", "+%d" % int(prov["builders"]))
 	if d.has("defense"):
 		var def: Dictionary = d["defense"]
 		_row(_panel_body, "Range", "%.1f tiles" % float(def["range"]))
@@ -489,18 +481,6 @@ func show_building(b: Dictionary) -> void:
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
-	if not Game.is_built(b):
-		var cost := Game.rush_cost(b)
-		var rush := _button("Rush (%d gems)" % cost, "GoldButton", func() -> void:
-			var e := Game.rush_build(b)
-			if e != "":
-				Sfx.play("error")
-				toast(e)
-			else:
-				Sfx.play("done")
-			show_building(b))
-		rush.disabled = int(Game.state["resources"]["gems"]) < cost
-		actions.add_child(rush)
 	if d.has("produces") and Game.is_built(b):
 		actions.add_child(_button("Collect %d" % int(b["stored"]), "GoldButton", func() -> void:
 			var got := Game.collect(b)
@@ -533,7 +513,7 @@ func show_army() -> void:
 	_row(_panel_body, "Cavalry housing", "%d/%d" % [sum["cavalry"], sum["cavalry_cap"]])
 	_row(_panel_body, "Ready / injured", "%d / %d" % [sum["ready"], sum["injured"]])
 
-	for barracks in ["barracks_h", "barracks_l"]:
+	for barracks in ["barracks_h"]:
 		var bd: Dictionary = Config.BUILDINGS[barracks]
 		_heading(_panel_body, bd["name"])
 		if not Game.has_built(barracks):
@@ -897,9 +877,8 @@ func show_help() -> void:
 		"Tap a building to inspect it. Mines fill up over time, so tap them or press Collect.",
 		"Build, pick a building, drag it where you want it and press Place.",
 		"Walls and roads work differently: press down and drag across the ground in any direction to lay a whole run, the way Clash of Clans does. Press Done when you are finished, no need to confirm each tile.",
-		"Only a few Builders can work at once. Buy a Builder's Hut with Gems for another, or spend Gems to rush a building straight to completion.",
-		"Homes raise the population. Citizens take jobs from your buildings and bond creatures.",
-		"Barracks H enlists citizens as soldiers, Barracks L summons creatures. Both need housing from Guard Stations, Outposts and the Cavalry Outpost.",
+		"Homes raise the population. Every citizen bonds one Nivian, rarely two; the King can bond up to five.",
+		"Barracks H enlists citizens as soldiers. Each soldier automatically bonds two Nivians, who fight only when that soldier is sent into battle. Up to 15 soldiers, housed by Guard Stations, Outposts and the Cavalry Outpost.",
 		"Attack picks a target. Choose a troop, tap open ground to drop it, tap a troop to select it and a building to focus it.",
 		"Stars come from 50% destruction, the enemy Castle, and a clean sweep.",
 		"Soldiers who fall may be lost for good. The rest heal, faster once you have a Hospital.",

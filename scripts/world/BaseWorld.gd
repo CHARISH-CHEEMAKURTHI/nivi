@@ -100,8 +100,8 @@ func _tag_height(type: String) -> float:
 	match type:
 		"castle": return 3.6
 		"outpost": return 2.7
-		"barracks_h", "barracks_l", "tavern", "hospital": return 2.1
-		"wall", "road", "builder_hut": return 1.2
+		"barracks_h", "tavern", "hospital": return 2.1
+		"wall", "road": return 1.2
 		_: return 1.7
 
 func _process(_delta: float) -> void:

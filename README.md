@@ -49,10 +49,6 @@ A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
 trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
 finger drags and taps, two fingers pan and pinch-zoom together.
 
-Only a few **Builders** can work on a construction at once (see the Builders
-count in the top bar); buy a Builder's Hut with **Gems** for another, or spend
-Gems to rush any building straight to completion from its info panel.
-
 In a raid: pick a troop card, tap open ground to send them in, tap a troop to
 select it, then tap a building to make that troop focus it. **Hold** and
 **Proceed** apply to the selection, or to everyone when nothing is selected.
@@ -65,14 +61,13 @@ Everything the design document lists for Castle Level One, section 5:
 | System | What it does |
 | --- | --- |
 | **Castle** | The seat of the throne and a bunker. Carries the base storage and shelters citizens. The upgrade to Castle Two is deliberately locked. |
-| **Barracks H and L** | Two separate queues. H enlists citizens as Knights and Cavalry, L summons Unitone, Firon and Garuan. |
+| **Barracks H** | Enlists citizens as Knights and Cavalry. Nivians are never trained separately -- each new soldier automatically bonds two, drawn from Unitone, Firon and Garuan. |
 | **Serge and Jade mines, and their stores** | Mines fill over time and are tapped to collect. Stores raise the ceiling. Jade mines run a little faster than Serge, to offset how many buildings draw on Serge. |
 | **Support buildings** | Homes, farms, shops, taverns, hospital, roads and walls, all now costing a mix of Serge and Jade rather than leaning on one currency. |
 | **Military stationing** | Guard Stations and Outposts house the army; the Law Enforcer Ground Cavalry Outpost houses cavalry alone. |
-| **Builders and Gems** | Only a handful of constructions can run at once; a Builder's Hut (bought with Gems) adds another, up to six. Gems also rush a building to instant completion, and trickle in from finishing buildings and from raids. |
 | **The home island** | Ten times the buildable area of the original plot, so a full set of buildings no longer tiles the whole island by Castle Level Two. |
 | **Short-Fire Cannon** | The single Castle One defence: short range, fast rate of fire. |
-| **Population** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Civilians bond one creature, soldiers two, the King five. |
+| **Population and bonding** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Every citizen bonds one Nivian, rarely two; a soldier bonds exactly two, who fight only when that soldier is sent into battle, never trained or sent in on their own; the King can bond up to five. Up to 15 soldiers total. |
 | **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |
 | **Credits** | Festivals and taxes move happiness and karma. Firon only bonds with a ruler holding twenty credits or more. |
 | **Raids** | Three enemy kingdoms with procedurally arranged bases. Troops pick targets, route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |

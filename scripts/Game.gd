@@ -19,15 +19,15 @@ func new_game() -> void:
 	state = {
 		"version": Config.SAVE_VERSION,
 		"saved_at": Time.get_unix_time_from_system(),
-		"resources": {"serge": 600.0, "jade": 600.0, "gems": 120.0},
+		"resources": {"serge": 600.0, "jade": 600.0},
 		"credits": 0,
 		"happiness_mod": 0.0,
 		"decree_cooldowns": {},
 		"buildings": [],
 		"citizens": [],
 		"army": [],
-		"queues": {"barracks_h": [], "barracks_l": []},
-		"king": {"status": "ready", "heal_remaining": 0.0},
+		"queues": {"barracks_h": []},
+		"king": {"status": "ready", "heal_remaining": 0.0, "bonded": []},
 		"next_id": 1,
 		"time": 0.0,
 		"season": 1,
@@ -45,11 +45,9 @@ func new_game() -> void:
 	add_building("home", mid + 2, mid + 6, true)
 	for i in 5:
 		add_citizen(18 + i * 6)
-	# The King starts with one soldier and two creatures (design document, section 6).
-	add_unit("knight")
-	add_unit("garuan")
-	add_unit("unitone")
-	state["citizens"][0]["profession"] = "Soldier"
+	# The King starts bonded to two Nivians, and can grow to a maximum of five.
+	state["king"]["bonded"] = ["unitone", "garuan"]
+	train("knight")
 	assign_professions()
 	log_line("Welcome, my liege. Your kingdom awaits its first orders.")
 
@@ -76,17 +74,23 @@ func add_building(type: String, tx: int, ty: int, done := false) -> Dictionary:
 	return b
 
 func add_citizen(age := -1) -> Dictionary:
+	var bonded: Array[String] = [Config.CREATURES.keys()[randi() % Config.CREATURES.keys().size()]]
+	if randf() < Config.RARE_SECOND_CREATURE_CHANCE:
+		bonded.append(Config.CREATURES.keys()[randi() % Config.CREATURES.keys().size()])
 	var c := {
 		"id": next_id(),
 		"name": Config.NAMES[randi() % Config.NAMES.size()],
 		"age": age if age > 0 else 16 + randi() % 20,
 		"profession": "Citizen",
+		"bonded": bonded,
 	}
 	state["citizens"].append(c)
 	return c
 
-func add_unit(type: String, citizen_id := 0) -> Dictionary:
-	var u := {"id": next_id(), "type": type, "status": "ready", "heal_remaining": 0.0, "citizen_id": citizen_id}
+## Enlisting a citizen as a soldier bonds them to exactly two Nivians, who
+## only fight alongside their soldier when that soldier is sent into battle.
+func add_unit(type: String, citizen_id := 0, bonded: Array[String] = []) -> Dictionary:
+	var u := {"id": next_id(), "type": type, "status": "ready", "heal_remaining": 0.0, "citizen_id": citizen_id, "bonded": bonded}
 	state["army"].append(u)
 	army_changed.emit()
 	return u
@@ -140,8 +144,8 @@ func can_place(type: String, tx: int, ty: int, ignore_id := 0) -> bool:
 
 ## Everything the finished buildings provide, totalled up.
 func capacities() -> Dictionary:
-	var cap := {"storage": {"serge": 0.0, "jade": 0.0, "gems": Config.GEM_STORAGE_CAP}, "pop_cap": 0, "housing": 0,
-		"housing_cavalry": 0, "happiness": 0.0, "heal_speed": 1.0, "hospital": false, "builders": Config.BASE_BUILDERS}
+	var cap := {"storage": {"serge": 0.0, "jade": 0.0}, "pop_cap": 0, "housing": 0,
+		"housing_cavalry": 0, "happiness": 0.0, "heal_speed": 1.0, "hospital": false}
 	for b in state["buildings"]:
 		if not is_built(b):
 			continue
@@ -164,19 +168,7 @@ func capacities() -> Dictionary:
 		if p.has("heal_speed"):
 			cap["heal_speed"] = maxf(cap["heal_speed"], float(p["heal_speed"]))
 			cap["hospital"] = true
-		if p.has("builders"):
-			cap["builders"] += int(p["builders"])
 	return cap
-
-## How many builders are out on a job right now: one per building that is
-## still under construction and actually takes time (walls and roads finish
-## instantly and never tie one up).
-func builders_busy() -> int:
-	var busy := 0
-	for b in state["buildings"]:
-		if b["build_remaining"] > 0.0:
-			busy += 1
-	return busy
 
 func happiness() -> int:
 	var cap := capacities()
@@ -271,8 +263,6 @@ func place_error(type: String, tx: int, ty: int) -> String:
 		return "That cannot be built."
 	if count_type(type) >= int(d["limit"]):
 		return "Limit reached for %s at Castle Level One." % d["name"]
-	if float(d.get("time", 0.0)) > 0.0 and builders_busy() >= capacities()["builders"]:
-		return "All your builders are busy. Wait for one to finish, or buy a Builder's Hut."
 	if not can_afford(d.get("cost", {})):
 		return "Not enough resources."
 	if not can_place(type, tx, ty):
@@ -289,27 +279,6 @@ func build(type: String, tx: int, ty: int) -> String:
 	if float(d["time"]) > 0.0:
 		log_line("Construction of %s has begun." % d["name"])
 	assign_professions()
-	return ""
-
-## Gems buy time: finish a building on the spot instead of waiting it out.
-func rush_cost(b: Dictionary) -> int:
-	return maxi(5, int(ceil(float(b["build_remaining"]) / 3.0)))
-
-func rush_error(b: Dictionary) -> String:
-	if is_built(b):
-		return "Already finished."
-	if state["resources"]["gems"] < float(rush_cost(b)):
-		return "Not enough Gems."
-	return ""
-
-func rush_build(b: Dictionary) -> String:
-	var err := rush_error(b)
-	if err != "":
-		return err
-	spend({"gems": float(rush_cost(b))})
-	b["build_remaining"] = 0.0
-	log_line("%s finished on the spot." % Config.BUILDINGS[b["type"]]["name"])
-	buildings_changed.emit()
 	return ""
 
 func move_building(b: Dictionary, tx: int, ty: int) -> bool:
@@ -336,14 +305,14 @@ func remove_building(b: Dictionary) -> bool:
 
 # ---------------------------------------------------------------- training
 func train_error(type: String) -> String:
-	var u: Dictionary = Config.UNITS[type]
-	if u.get("hidden", false):
+	if not Config.UNITS.has(type) or Config.UNITS[type].get("hidden", false):
 		return "Unknown unit."
+	var u: Dictionary = Config.UNITS[type]
 	var barracks: String = u["barracks"]
 	if not has_built(barracks):
 		return "Requires a finished %s." % Config.BUILDINGS[barracks]["name"]
-	if u.has("credits_required") and state["credits"] < int(u["credits_required"]):
-		return "%s only answers a ruler with %d+ credits." % [u["name"], int(u["credits_required"])]
+	if state["army"].size() >= Config.MAX_SOLDIERS:
+		return "You already command %d soldiers, the most Castle Level One allows." % Config.MAX_SOLDIERS
 	if not can_afford(u["cost"]):
 		return "Not enough resources."
 	var cap := capacities()
@@ -352,7 +321,7 @@ func train_error(type: String) -> String:
 			return "No room. Build a Cavalry Outpost."
 	elif housing_used("army") + int(u["housing"]) > cap["housing"]:
 		return "No room. Build Guard Stations or Outposts."
-	if u["kind"] == "human" and _free_citizen().is_empty():
+	if _free_citizen().is_empty():
 		return "No citizens left to enlist. Build Homes and let the population grow."
 	if state["queues"][barracks].size() >= 8:
 		return "That training queue is full."
@@ -370,12 +339,15 @@ func train(type: String) -> String:
 		return err
 	var u: Dictionary = Config.UNITS[type]
 	spend(u["cost"])
-	var item := {"type": type, "remaining": float(u["time"]), "citizen_id": 0}
-	if u["kind"] == "human":
-		# Enlisting turns a civilian into a soldier.
-		var c := _free_citizen()
-		c["profession"] = "Soldier"
-		item["citizen_id"] = c["id"]
+	# Enlisting turns a civilian into a soldier and bonds them to two Nivians,
+	# who fight only when this soldier is sent into battle.
+	var c := _free_citizen()
+	c["profession"] = "Soldier"
+	var bonded: Array[String] = []
+	var kin: Array = Config.CREATURES.keys()
+	for i in Config.BONDED_PER_SOLDIER:
+		bonded.append(kin[randi() % kin.size()])
+	var item := {"type": type, "remaining": float(u["time"]), "citizen_id": c["id"], "bonded": bonded}
 	state["queues"][u["barracks"]].append(item)
 	army_changed.emit()
 	return ""
@@ -451,8 +423,6 @@ func _tick(dt: float) -> void:
 				b["build_remaining"] = 0.0
 				log_line("%s is complete." % d["name"])
 				Sfx.play("done")
-				# a small trickle of Gems for finishing something, bigger builds pay a bit more
-				add_resources({"gems": clampf(round(float(d["time"]) / 5.0), 1.0, 6.0)})
 				dirty = true
 				buildings_changed.emit()
 			continue
@@ -467,7 +437,7 @@ func _tick(dt: float) -> void:
 		item["remaining"] -= dt
 		if item["remaining"] <= 0.0:
 			q.remove_at(0)
-			add_unit(item["type"], item["citizen_id"])
+			add_unit(item["type"], item["citizen_id"], item.get("bonded", []))
 			log_line("%s has finished training." % Config.UNITS[item["type"]]["name"])
 			Sfx.play("train")
 
@@ -534,9 +504,6 @@ func apply_battle_result(result: Dictionary) -> Dictionary:
 	if int(result["stars"]) > 0:
 		stats["wins"] += 1
 	stats["stars"] += int(result["stars"])
-	var gem_reward: float = [0.0, 3.0, 8.0, 15.0][clampi(int(result["stars"]), 0, 3)]
-	if gem_reward > 0.0:
-		add_resources({"gems": gem_reward})
 	var got := add_resources(result["loot"])
 	stats["looted_serge"] += int(got.get("serge", 0))
 	stats["looted_jade"] += int(got.get("jade", 0))

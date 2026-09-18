@@ -36,14 +36,17 @@ static func _knight(b: MeshBuilder) -> void:
 	b.cylinder(Vector3(0.26, 0.88, 0.02), 0.04, 0.0, 0.14, Palette.IRON, 5)
 
 static func _cavalry(b: MeshBuilder) -> void:
-	# mount
-	b.box(Vector3(0, 0.3, 0.02), Vector3(0.34, 0.26, 0.66), Palette.WOOD)
-	b.box(Vector3(0, 0.3, -0.3), Vector3(0.22, 0.3, 0.2), Palette.WOOD)
-	b.box(Vector3(0, 0.56, -0.36), Vector3(0.18, 0.18, 0.26), Palette.WOOD_LIGHT)
+	# mount: a bonded Unitone, not a horse -- same water-kin blues as its own model
+	var body := Color("4fa8ff")
+	var dark := Color("2b6fc4")
+	var light := Color("bfe4ff")
+	b.box(Vector3(0, 0.3, 0.02), Vector3(0.34, 0.26, 0.66), body)
+	b.box(Vector3(0, 0.3, -0.3), Vector3(0.22, 0.3, 0.2), body)
+	b.box(Vector3(0, 0.56, -0.36), Vector3(0.18, 0.18, 0.26), light)
 	for sx in [-0.13, 0.13]:
 		for sz in [-0.22, 0.22]:
-			b.box(Vector3(sx, 0, sz), Vector3(0.09, 0.3, 0.09), Palette.WOOD_DARK)
-	b.box(Vector3(0, 0.34, 0.36), Vector3(0.1, 0.24, 0.1), Palette.WOOD_DARK)
+			b.box(Vector3(sx, 0, sz), Vector3(0.09, 0.3, 0.09), dark)
+	b.box(Vector3(0, 0.34, 0.36), Vector3(0.1, 0.24, 0.1), dark)
 	# rider
 	var r := MeshBuilder.new()
 	_person(r, Palette.CLOTH_RED, Palette.GOLD, Palette.IRON, 0.85)

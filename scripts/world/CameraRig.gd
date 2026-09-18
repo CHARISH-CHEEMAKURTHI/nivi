@@ -38,10 +38,17 @@ var _pinch_start_dist := 0.0
 var _pinch_start_zoom := 0.0
 var _touch_mid_prev := Vector2.ZERO
 
-## Set while the pointer is over the UI, or while the game wants exclusive
-## control of drags (placing a building, laying a wall), so the world ignores
-## the gesture instead of panning underneath it.
+## Set while the game wants exclusive control of drags (placing a building,
+## laying a wall), so the world ignores the gesture instead of panning
+## underneath it.
 var blocked := false
+
+## True whenever the pointer sits over a Control (a panel, a scrollable list,
+## a button), so a scroll or pinch there scrolls that panel instead of
+## zooming or panning the world underneath it.
+func _over_ui() -> bool:
+	var vp := get_viewport()
+	return vp != null and vp.gui_get_hovered_control() != null
 
 signal tapped(screen_pos: Vector2)
 signal pressed(screen_pos: Vector2)
@@ -91,11 +98,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_mouse_motion(event as InputEventMouseMotion)
 	elif event is InputEventPanGesture:
 		# trackpad two-finger scroll (mainly macOS): pan, never zoom
-		if not blocked:
+		if not blocked and not _over_ui():
 			_pan_by_screen((event as InputEventPanGesture).delta * PAN_GESTURE_SCALE)
 	elif event is InputEventMagnifyGesture:
 		# trackpad pinch: factor > 1 means "spread fingers", i.e. zoom in
-		if not blocked:
+		if not blocked and not _over_ui():
 			var mg := event as InputEventMagnifyGesture
 			_zoom_at(mg.position, _zoom / maxf(mg.factor, 0.01))
 	elif event is InputEventScreenTouch:
@@ -104,6 +111,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_screen_drag(event as InputEventScreenDrag)
 
 func _on_mouse_button(mb: InputEventMouseButton) -> void:
+	if mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT] and _over_ui():
+		# the pointer is over a panel (e.g. the Kingdom or Shop scroll list):
+		# let the wheel scroll that panel instead of zooming or panning the world
+		return
 	if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 		_zoom_at(mb.position, _zoom / 1.12)
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:

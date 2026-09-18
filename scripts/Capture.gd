@@ -43,6 +43,8 @@ func _run_demo() -> void:
 	if main == null:
 		return
 	match _demo:
+		"jam":
+			_run_jam_test()
 		"verify":
 			await _run_verify()
 		"econ":
@@ -59,27 +61,17 @@ func _run_demo() -> void:
 			main.hud.show_build("resource")
 		"buildcore":
 			main.hud.show_build("core")
-		"rush":
-			Game.state["resources"]["gems"] = 500.0
-			Game.build("home", 20, 20)
-			var b := {}
-			for bl in Game.buildings():
-				if bl["type"] == "home" and bl["build_remaining"] > 0.0:
-					b = bl
-			main.world.select(b)
-			main.hud.show_building(b)
 		"army":
 			Game.state["resources"]["serge"] = 4000.0
 			Game.state["resources"]["jade"] = 4000.0
 			# finish each construction before starting the next, so this demo
 			# is not limited by how many builders a fresh kingdom has
-			for spec in [["barracks_h", 14, 12], ["barracks_l", 22, 12], ["guard_station", 14, 24], ["cavalry_outpost", 21, 24]]:
+			for spec in [["barracks_h", 14, 12], ["guard_station", 14, 24], ["cavalry_outpost", 21, 24]]:
 				Game.build(str(spec[0]), int(spec[1]), int(spec[2]))
 				for b in Game.buildings():
 					b["build_remaining"] = 0.0
 			Game.train("knight")
 			Game.train("cavalry")
-			Game.train("garuan")
 			main.hud.show_army()
 		"kingdom":
 			main.hud.show_kingdom()
@@ -265,8 +257,8 @@ func _click(pos: Vector2, jitter: Vector2) -> void:
 		await _mouse_move_to(pos, pos + jitter)
 	await _mouse_up(pos + jitter)
 
-## Headless check of every non-attack change in one pass: grid size, builders,
-## gems, the camera deadzone, and multi-directional wall dragging.
+## Headless check of every non-attack change in one pass: grid size,
+## the camera deadzone, and multi-directional wall dragging.
 func _run_verify() -> void:
 	var main := get_tree().current_scene
 	var world: BaseWorld = main.world
@@ -279,32 +271,11 @@ func _run_verify() -> void:
 	print("[verify] BATTLE_GRID=%d BATTLE_BUILD=%d..%d (unchanged raid map)" % [
 		Config.BATTLE_GRID, Config.BATTLE_BUILD_MIN, Config.BATTLE_BUILD_MAX])
 
-	# --- builders --------------------------------------------------------
 	Game.state["resources"]["serge"] = 200000.0
 	Game.state["resources"]["jade"] = 200000.0
-	Game.state["resources"]["gems"] = 5000.0
-	var cap := Game.capacities()
-	print("[verify] builders base=%d busy=%d" % [cap["builders"], Game.builders_busy()])
 	var e1 := Game.build("home", 10, 10)
-	var e2 := Game.build("home", 14, 10)
-	var e3 := Game.place_error("home", 10, 14)
-	print("[verify] two builds: '%s' / '%s'   third while both busy: '%s'" % [e1, e2, e3])
-	for b in Game.buildings():
-		if b["type"] == "home" and b["build_remaining"] > 0.0:
-			b["build_remaining"] = 0.0
-			break
-	var e4 := Game.place_error("home", 10, 14)
-	print("[verify] after one finishes, third now: '%s' (expect allowed)" % e4)
-
-	# --- gems + builder's hut + rush -------------------------------------
-	var hut_err := Game.build("builder_hut", 20, 10)
-	print("[verify] builder_hut build: '%s'  gems left=%d" % [hut_err, int(Game.state["resources"]["gems"])])
-	for b in Game.buildings():
-		if b["type"] == "builder_hut":
-			var cost := Game.rush_cost(b)
-			var rr := Game.rush_build(b)
-			print("[verify] hut rush cost=%d result='%s' built=%s" % [cost, rr, Game.is_built(b)])
-	print("[verify] builders after hut=%d" % Game.capacities()["builders"])
+	var e2 := Game.place_error("home", 14, 10)
+	print("[verify] build: '%s'   place_error at a second spot: '%s'" % [e1, e2])
 
 	# --- camera deadzone: a jittery tap must not pan, a real drag must ----
 	var start_pos := rig.position
@@ -399,7 +370,7 @@ func _run_econ() -> void:
 		order.append("road")
 	for i in 4:
 		order.append("home")
-	order.append_array(["farm", "guard_station", "shop", "barracks_l", "hospital", "outpost"])
+	order.append_array(["farm", "guard_station", "shop", "hospital", "outpost"])
 	var x := 10
 	var y := 10
 	for type in order:
@@ -444,3 +415,43 @@ func _draw_wall_run() -> void:
 	world._on_pressed(rig.camera.unproject_position(Config.tile_to_world(pts[0].x, pts[0].y)))
 	for i in range(1, pts.size()):
 		world._on_drag_moved(rig.camera.unproject_position(Config.tile_to_world(pts[i].x, pts[i].y)))
+
+## Headless check: two units approaching head-on through a one-tile gap used
+## to push against each other forever. Confirms both eventually get through.
+func _run_jam_test() -> void:
+	var kingdom: Dictionary = Config.ENEMY_KINGDOMS[0]
+	var b := BattleState.new(kingdom, [{"id": 1, "type": "knight"}, {"id": 2, "type": "knight"}], false)
+	# a short wall out in an empty corner of the map, well clear of the
+	# generated base, with a single-tile gate at x=5 -- forces two units
+	# through the same choke point from opposite sides
+	for x in range(2, 9):
+		if x != 5:
+			b.buildings.append({"id": 900 + x, "type": "wall", "x": x, "y": 10, "hp": 300.0, "max_hp": 300.0, "cool": 0.0})
+	b._rebuild_grid()
+	var err1 := b.deploy("knight", Vector2i(5, 7))
+	var err2 := b.deploy("knight", Vector2i(5, 13))
+	if b.units.size() < 2:
+		print("[jam] ABORT: deploy failed err1='%s' err2='%s'" % [err1, err2])
+		get_tree().quit()
+		return
+	var u1: Dictionary = b.units[0]
+	var u2: Dictionary = b.units[1]
+	# send them past each other through the gate, not at a building
+	b.move_to(Vector2i(5, 13), int(u1["id"]))
+	b.move_to(Vector2i(5, 7), int(u2["id"]))
+	var start1: Vector2 = u1["pos"]
+	var start2: Vector2 = u2["pos"]
+	var t := 0.0
+	var step := 1.0 / 30.0
+	var unstuck_at := -1.0
+	var iterations := 0
+	while t < 20.0 and iterations < 700:
+		iterations += 1
+		b.update(step)
+		t += step
+		if unstuck_at < 0.0 and u1["pos"].distance_to(start1) > 3.0 and u2["pos"].distance_to(start2) > 3.0:
+			unstuck_at = t
+	print("[jam] u1 moved=%.2f u2 moved=%.2f both_through_by=%s" % [
+		u1["pos"].distance_to(start1), u2["pos"].distance_to(start2),
+		("%.1fs" % unstuck_at) if unstuck_at > 0.0 else "NEVER"])
+	get_tree().quit()

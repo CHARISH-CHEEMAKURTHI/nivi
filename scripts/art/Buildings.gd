@@ -9,9 +9,9 @@ const MARGIN := 0.12
 static func footprint(type: String) -> Vector2i:
 	match type:
 		"castle": return Vector2i(4, 4)
-		"barracks_h", "barracks_l": return Vector2i(3, 3)
+		"barracks_h": return Vector2i(3, 3)
 		"farm", "tavern", "hospital", "cavalry_outpost": return Vector2i(3, 2)
-		"road", "wall", "builder_hut": return Vector2i(1, 1)
+		"road", "wall": return Vector2i(1, 1)
 		_: return Vector2i(2, 2)
 
 static func build(type: String) -> Mesh:
@@ -19,7 +19,6 @@ static func build(type: String) -> Mesh:
 	match type:
 		"castle": _castle(b)
 		"barracks_h": _barracks_h(b)
-		"barracks_l": _barracks_l(b)
 		"serge_mine": _mine(b, Palette.SERGE, Palette.SERGE_DARK)
 		"jade_mine": _mine(b, Palette.JADE, Palette.JADE_DARK)
 		"serge_storage": _serge_storage(b)
@@ -31,7 +30,6 @@ static func build(type: String) -> Mesh:
 		"hospital": _hospital(b)
 		"road": _road(b)
 		"wall": _wall(b)
-		"builder_hut": _builder_hut(b)
 		"guard_station": _guard_station(b)
 		"outpost": _outpost(b)
 		"cavalry_outpost": _cavalry_outpost(b)
@@ -129,25 +127,6 @@ static func _barracks_h(b: MeshBuilder) -> void:
 		b.cylinder(Vector3(0.82 + i * 0.16, 0.86, -0.72), 0.05, 0.0, 0.16, Palette.IRON, 5)
 	_banner(b, Vector3(-1.2, 0.14, 0.95), 1.35, Palette.CLOTH_RED)
 
-static func _barracks_l(b: MeshBuilder) -> void:
-	var s := 3.0 - MARGIN * 2.0
-	_plinth(b, Vector2(s, s), 0.14, Palette.DIRT)
-	b.box(Vector3(-0.3, 0.14, 0), Vector3(1.95, 0.95, 2.1), Palette.STONE, 0.0, Palette.STONE_LIGHT)
-	b.gable(Vector3(-0.3, 1.09, 0), Vector3(1.95, 0.78, 2.1), Palette.ROOF_TEAL, 0.0, 0.16)
-	# summoning circle in the yard
-	b.cylinder(Vector3(0.92, 0.14, 0.0), 0.62, 0.62, 0.04, Palette.STONE_LIGHT, 16)
-	b.cylinder(Vector3(0.92, 0.18, 0.0), 0.46, 0.46, 0.02, Palette.ROOF_TEAL, 16)
-	b.cylinder(Vector3(0.92, 0.2, 0.0), 0.26, 0.26, 0.02, Palette.STONE_LIGHT, 12)
-	for i in 4:
-		var a := TAU * float(i) / 4.0 + 0.4
-		b.box(Vector3(0.92 + cos(a) * 0.52, 0.18, sin(a) * 0.52), Vector3(0.12, 0.3, 0.12), Palette.ROOF_TEAL)
-	# crystal on the gable
-	b.cylinder(Vector3(-0.3, 1.82, 0), 0.12, 0.0, 0.34, Palette.JADE, 6)
-	# paw mark by the door
-	b.box(Vector3(-0.3, 0.6, -1.09), Vector3(0.3, 0.26, 0.06), Palette.PLASTER)
-	b.box(Vector3(-0.3, 0.72, -1.12), Vector3(0.22, 0.1, 0.04), Palette.ROOF_TEAL)
-
-# --- resources --------------------------------------------------------------
 static func _mine(b: MeshBuilder, ore: Color, ore_dark: Color) -> void:
 	var s := 2.0 - MARGIN * 2.0
 	_plinth(b, Vector2(s, s), 0.12, Palette.DIRT_DARK)
@@ -271,19 +250,6 @@ static func _wall(b: MeshBuilder) -> void:
 			b.box(Vector3(sx, 0.88, sz), Vector3(0.3, 0.18, 0.3), Palette.STONE_LIGHT)
 
 # --- the builder's hut -------------------------------------------------------
-static func _builder_hut(b: MeshBuilder) -> void:
-	var s := 1.0 - MARGIN * 2.0
-	_plinth(b, Vector2(s, s), 0.10, Palette.DIRT)
-	# a small canvas pup-tent, big enough for one busy builder
-	b.gable(Vector3(0, 0.10, 0), Vector3(0.62, 0.48, 0.6), Palette.THATCH, 0.0, 0.08)
-	b.box(Vector3(0, 0.10, 0.02), Vector3(0.05, 0.3, 0.05), Palette.WOOD_DARK)
-	# a leaning hammer and a small pile of planks out front
-	b.box(Vector3(0.3, 0.28, -0.28), Vector3(0.05, 0.3, 0.05), Palette.WOOD_DARK, 0.5)
-	b.box(Vector3(0.33, 0.42, -0.25), Vector3(0.14, 0.07, 0.09), Palette.IRON, 0.5)
-	b.box(Vector3(-0.24, 0.13, -0.3), Vector3(0.3, 0.05, 0.1), Palette.WOOD)
-	b.box(Vector3(-0.24, 0.19, -0.3), Vector3(0.28, 0.05, 0.09), Palette.WOOD_LIGHT)
-
-# --- military ---------------------------------------------------------------
 static func _guard_station(b: MeshBuilder) -> void:
 	var s := 2.0 - MARGIN * 2.0
 	_plinth(b, Vector2(s, s), 0.14, Palette.STONE_DARK)

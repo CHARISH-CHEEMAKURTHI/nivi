@@ -20,18 +20,23 @@ const BATTLE_TIME := 150.0        ## seconds per raid
 const SEASON_SECONDS := 60.0      ## one season of in-game time (aging tick)
 const OFFLINE_CAP := 7200.0       ## most offline seconds credited on load
 const SAVE_PATH := "user://nivi_save.json"
-const SAVE_VERSION := 2   ## bumped: Gems, builders and the larger home grid are new to this save shape
+const SAVE_VERSION := 3   ## bumped: Builders/Gems removed, army now population-bonded
 
-## Builders: how many constructions can be under way at once. Every ruler
-## starts with two; the rest come from Builder's Huts, bought with Gems.
-const BASE_BUILDERS := 2
-const MAX_BUILDER_HUTS := 4
-const GEM_STORAGE_CAP := 999999.0   ## Gems have no storage building; effectively uncapped
+## Castle Level One's hard cap on standing soldiers, independent of housing:
+## fifteen is plenty to take any of the three story kingdoms, so that is what
+## the design settles on until a later castle level raises it. Each soldier
+## always carries exactly BONDED_PER_SOLDIER creatures with them, so this
+## also caps how many creatures the army can field.
+const MAX_SOLDIERS := 15
+const BONDED_PER_SOLDIER := 2
+const BONDED_FOR_KING := 5
+## A civilian usually bonds one creature; this is how often they bond a
+## second, rarer one instead.
+const RARE_SECOND_CREATURE_CHANCE := 0.15
 
 const RESOURCES := {
 	"serge": {"name": "Serge", "color": Color("ff9a3c")},
 	"jade": {"name": "Jade", "color": Color("3ddc97")},
-	"gems": {"name": "Gems", "color": Color("b98aff")},
 }
 
 const CATEGORIES := [
@@ -50,32 +55,20 @@ const BUILDINGS := {
 		"desc": "Seat of the throne and a bunker. Shelters citizens during attacks. Upgrading to Castle Level Two is beyond this demo.",
 		"provides": {"pop_cap": 6, "storage": {"serge": 1000, "jade": 1000}},
 	},
-	"builder_hut": {
-		"name": "Builder's Hut", "category": "core", "w": 1, "h": 1, "hp": 200, "limit": MAX_BUILDER_HUTS,
-		"cost": {"gems": 150}, "time": 30.0,
-		"desc": "Puts a builder to work full time. Each hut lets one more construction run at once; buy Gems' worth of them to build several things together.",
-		"provides": {"builders": 1},
-	},
 	"barracks_h": {
 		"name": "Barracks H", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
 		"cost": {"serge": 150}, "time": 10.0,
-		"desc": "Human training ground. Enlists citizens as Knights and Cavalry. Shares its yard with Barracks L but keeps its own queue.",
+		"desc": "Human training ground. Enlists citizens as Knights and Cavalry, each already bonded with their own Nivians.",
 		"trains": ["knight", "cavalry"],
 	},
-	"barracks_l": {
-		"name": "Barracks L", "category": "military", "w": 3, "h": 3, "hp": 500, "limit": 1,
-		"cost": {"jade": 105, "serge": 45}, "time": 10.0,
-		"desc": "Creature training ground. Performs the summoning ritual that brings creatures over from the other world.",
-		"trains": ["unitone", "firon", "garuan"],
-	},
 	"serge_mine": {
-		"name": "Serge Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 6,
+		"name": "Serge Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
 		"cost": {"jade": 100}, "time": 6.0, "loot": 0.10,
 		"desc": "Mines Serge from the rock. Tap to collect. Fills up if left alone.",
 		"produces": {"resource": "serge", "per_second": 1.2, "capacity": 300},
 	},
 	"jade_mine": {
-		"name": "Jade Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 6,
+		"name": "Jade Mine", "category": "resource", "w": 2, "h": 2, "hp": 400, "limit": 3,
 		"cost": {"serge": 100}, "time": 6.0, "loot": 0.10,
 		"desc": "Mines Jade crystal. Tap to collect. Fills up if left alone.",
 		# A touch faster than the Serge mine: walls, roads and homes are
@@ -84,31 +77,31 @@ const BUILDINGS := {
 		"produces": {"resource": "jade", "per_second": 1.4, "capacity": 300},
 	},
 	"serge_storage": {
-		"name": "Serge Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 3,
+		"name": "Serge Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 1,
 		"cost": {"jade": 200}, "time": 12.0, "loot": 0.25,
 		"desc": "Dedicated store for harvested Serge. Raises how much the kingdom can hold.",
 		"provides": {"storage": {"serge": 1500}},
 	},
 	"jade_storage": {
-		"name": "Jade Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 3,
+		"name": "Jade Storage", "category": "resource", "w": 2, "h": 2, "hp": 800, "limit": 1,
 		"cost": {"serge": 200}, "time": 12.0, "loot": 0.25,
 		"desc": "Dedicated store for harvested Jade. Raises how much the kingdom can hold.",
 		"provides": {"storage": {"jade": 1500}},
 	},
 	"home": {
-		"name": "Home", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 10,
+		"name": "Home", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 6,
 		"cost": {"serge": 55, "jade": 25}, "time": 5.0,
 		"desc": "Houses citizens. More homes let the population grow, and population feeds the creature roster.",
 		"provides": {"pop_cap": 4},
 	},
 	"farm": {
-		"name": "Farm", "category": "support", "w": 3, "h": 2, "hp": 250, "limit": 5,
+		"name": "Farm", "category": "support", "w": 3, "h": 2, "hp": 250, "limit": 3,
 		"cost": {"serge": 70, "jade": 30}, "time": 6.0,
 		"desc": "Feeds the kingdom. Well-fed citizens are happier.",
 		"provides": {"happiness": 8, "profession": "Farmer"},
 	},
 	"shop": {
-		"name": "Shop", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 3,
+		"name": "Shop", "category": "support", "w": 2, "h": 2, "hp": 300, "limit": 2,
 		"cost": {"jade": 85, "serge": 35}, "time": 6.0,
 		"desc": "A market stall. Trade lifts the mood of the town.",
 		"provides": {"happiness": 5, "profession": "Merchant"},
@@ -126,24 +119,24 @@ const BUILDINGS := {
 		"provides": {"heal_speed": 4, "profession": "Healer"},
 	},
 	"road": {
-		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 1400,
+		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 40,
 		"cost": {"serge": 3, "jade": 2}, "time": 0.0, "flat": true, "passable": true,
 		"desc": "Cobbled path. Decorative, but a tidy kingdom is a happy one.",
 		"provides": {"happiness": 0.25},
 	},
 	"wall": {
-		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 700,
+		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 50,
 		"cost": {"serge": 14, "jade": 6}, "time": 0.0, "wall": true,
 		"desc": "Defensive perimeter. Attackers must break through or walk around.",
 	},
 	"guard_station": {
-		"name": "Guard Station", "category": "military", "w": 2, "h": 2, "hp": 500, "limit": 3,
+		"name": "Guard Station", "category": "military", "w": 2, "h": 2, "hp": 500, "limit": 2,
 		"cost": {"serge": 70, "jade": 30}, "time": 8.0,
 		"desc": "Posting for soldiers and law enforcers on defence duty. Houses part of your army.",
 		"provides": {"housing": 8},
 	},
 	"outpost": {
-		"name": "Outpost", "category": "military", "w": 2, "h": 2, "hp": 450, "limit": 3,
+		"name": "Outpost", "category": "military", "w": 2, "h": 2, "hp": 450, "limit": 2,
 		"cost": {"jade": 105, "serge": 45}, "time": 8.0,
 		"desc": "Additional defensive posting structure. Houses part of your army.",
 		"provides": {"housing": 8},
@@ -155,7 +148,7 @@ const BUILDINGS := {
 		"provides": {"housing": 6, "housing_for": "cavalry"},
 	},
 	"cannon": {
-		"name": "Short-Fire Cannon", "category": "defense", "w": 2, "h": 2, "hp": 350, "limit": 5,
+		"name": "Short-Fire Cannon", "category": "defense", "w": 2, "h": 2, "hp": 350, "limit": 3,
 		"cost": {"serge": 150, "jade": 50}, "time": 10.0,
 		"desc": "Cannon Type A. Short range but a very fast rate of fire, charged by a law enforcer channelling their creature's energy.",
 		"defense": {"range": 4.0, "rate": 0.35, "damage": 4.0},
@@ -169,43 +162,48 @@ const TYPE_RATIOS := {
 	"water": {"strength": 1, "magic": 3, "defense": 2},
 }
 
-## Section 7: the three sample creatures and their own stat layer.
+## Section 7: the three sample Nivians and their own stat layer. There are no
+## animals in this world -- these are Nivians through and through, not
+## reskinned wildlife -- so "kin" names their elemental affinity rather than
+## an earthly species.
 const CREATURES := {
-	"unitone": {"name": "Unitone", "base": "Horse", "type": "water", "speed": 3, "hp": 2, "housing": 1},
-	"firon": {"name": "Firon", "base": "Bear", "type": "fire", "speed": 1, "hp": 3, "housing": 2},
-	"garuan": {"name": "Garuan", "base": "Kangaroo", "type": "normal", "speed": 2, "hp": 2, "housing": 1},
+	"unitone": {"name": "Unitone", "kin": "Water-kin", "type": "water", "speed": 3, "hp": 2},
+	"firon": {"name": "Firon", "kin": "Fire-kin", "type": "fire", "speed": 1, "hp": 3},
+	"garuan": {"name": "Garuan", "kin": "Ground-kin", "type": "normal", "speed": 2, "hp": 2},
 }
 
+## Nivians are no longer trained on their own: every citizen and soldier
+## already carries their bonded Nivians (see Game.gd's population/bonding
+## code), so these three entries exist only to supply combat stats when a
+## bonded Nivian fights alongside its person. Only Knight and Cavalry are
+## ever trained directly, at Barracks H.
 const UNITS := {
 	"knight": {
 		"name": "Knight", "kind": "human", "barracks": "barracks_h",
 		"cost": {"serge": 40}, "time": 8.0, "housing": 1,
 		"hp": 70.0, "atk": 15.0, "rate": 1.0, "range": 0.7, "speed": 1.7, "armor": 0.10, "prefer": "any",
-		"desc": "Troop Soldier. Has a creature companion but does not ride it into battle. A sturdy all-rounder.",
+		"desc": "Troop Soldier. Their two bonded Nivians fight alongside them, not ridden into battle. A sturdy all-rounder.",
 	},
 	"cavalry": {
 		"name": "Cavalry", "kind": "human", "barracks": "barracks_h",
 		"cost": {"serge": 60, "jade": 40}, "time": 15.0, "housing": 3,
 		"hp": 130.0, "atk": 27.0, "rate": 0.8, "range": 0.7, "speed": 2.7, "armor": 0.10, "prefer": "defense",
-		"desc": "Cavalry Soldier. Rides their creature into battle. Fast, and goes straight for the defences.",
+		"desc": "Cavalry Soldier. Rides a bonded Unitone into battle. Fast, and goes straight for the defences.",
 	},
 	"unitone": {
-		"name": "Unitone", "kind": "creature", "barracks": "barracks_l",
-		"cost": {"jade": 40}, "time": 10.0, "housing": 1, "element": "water",
+		"name": "Unitone", "kind": "creature", "element": "water",
 		"hp": 64.0, "atk": 20.0, "rate": 1.0, "range": 3.0, "speed": 2.1, "armor": 0.10, "prefer": "any",
-		"desc": "Water-type horse. Quick, and casts water bolts from a short distance.",
+		"desc": "Water-kin. Quick, and casts water bolts from a short distance.",
 	},
 	"firon": {
-		"name": "Firon", "kind": "creature", "barracks": "barracks_l",
-		"cost": {"jade": 70}, "time": 14.0, "housing": 2, "element": "fire", "credits_required": 20,
+		"name": "Firon", "kind": "creature", "element": "fire", "credits_required": 20,
 		"hp": 96.0, "atk": 20.0, "rate": 1.0, "range": 3.0, "speed": 1.5, "armor": 0.10, "prefer": "any",
-		"desc": "Fire-type bear. Slow and tough, hurls fire from a distance. Only bonds with a well-regarded ruler.",
+		"desc": "Fire-kin. Slow and tough, hurls fire from a distance. Only bonds with a well-regarded ruler.",
 	},
 	"garuan": {
-		"name": "Garuan", "kind": "creature", "barracks": "barracks_l",
-		"cost": {"jade": 40}, "time": 10.0, "housing": 1, "element": "normal",
+		"name": "Garuan", "kind": "creature", "element": "normal",
 		"hp": 64.0, "atk": 15.0, "rate": 1.0, "range": 0.7, "speed": 1.8, "armor": 0.20, "prefer": "resource",
-		"desc": "Normal-type kangaroo. Heavily armoured brawler that loves to raid mines and stores.",
+		"desc": "Ground-kin. Heavily armoured brawler that loves to raid mines and stores.",
 	},
 	"king": {
 		"name": "The King", "kind": "hero", "hidden": true,

@@ -36,7 +36,7 @@ func _init(kingdom_data: Dictionary, roster: Array, king_ready: bool) -> void:
 	time_left = Config.BATTLE_TIME
 	king_available = king_ready
 	for u in roster:
-		available.append({"id": u["id"], "type": u["type"]})
+		available.append({"id": u["id"], "type": u["type"], "bonded": u.get("bonded", [])})
 	_loot_total = kingdom["loot"].duplicate()
 	buildings = _generate_base()
 	for b in buildings:
@@ -204,6 +204,7 @@ func deploy(type: String, tile: Vector2i) -> String:
 	if not can_deploy_at(tile):
 		return "Drop them clear of enemy buildings."
 	var roster_id := 0
+	var bonded: Array = []
 	if type == "king":
 		if not king_available or king_deployed:
 			return "The King is not available."
@@ -217,19 +218,29 @@ func deploy(type: String, tile: Vector2i) -> String:
 		if idx < 0:
 			return "No more of those."
 		roster_id = int(available[idx]["id"])
+		bonded = available[idx].get("bonded", [])
 		available.remove_at(idx)
+	var soldier_id := _spawn_unit(type, tile, roster_id)
+	# A soldier's bonded Nivians fight only when their soldier is sent in --
+	# they land beside them and answer the same orders, not deployed apart.
+	for creature_type in bonded:
+		_spawn_unit(str(creature_type), tile, roster_id, soldier_id)
+	started = true
+	return ""
+
+func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0) -> int:
 	var d: Dictionary = Config.UNITS[type]
+	var id := _next_id
 	units.append({
-		"id": _next_id, "roster_id": roster_id, "type": type,
-		"pos": Vector2(tile.x + TILE_CENTER + randf_range(-0.2, 0.2), tile.y + TILE_CENTER + randf_range(-0.2, 0.2)),
+		"id": id, "roster_id": roster_id, "type": type, "bonded_to": bonded_to,
+		"pos": Vector2(tile.x + TILE_CENTER + randf_range(-0.3, 0.3), tile.y + TILE_CENTER + randf_range(-0.3, 0.3)),
 		"hp": float(d["hp"]), "max_hp": float(d["hp"]), "cooldown": 0.0,
 		"target_id": 0, "wall_id": 0, "path": [], "path_i": 0, "repath": 0.0,
 		"directive": "auto", "focus_id": 0, "move_to": Vector2i(-1, -1),
-		"facing": 0.0, "dead": false, "attacking": false,
+		"facing": 0.0, "dead": false, "attacking": false, "stuck_timer": 0.0, "stuck_anchor": Vector2.ZERO,
 	})
 	_next_id += 1
-	started = true
-	return ""
+	return id
 
 # ---------------------------------------------------------------- queries
 func building_at(tx: int, ty: int) -> Dictionary:
@@ -262,6 +273,13 @@ func unit_near(world_xz: Vector2, radius := 0.8) -> Dictionary:
 			best_d = d
 			best = u
 	return best
+
+## Angle a Node3D (whose forward is -Z by Godot convention) needs for its
+## rotation.y so it visibly faces `dir`, given our world (x, z) is stored here
+## as a Vector2(x, z). Facing math is easy to get backwards -- this is the one
+## place it happens, so every caller goes through it.
+static func _face(dir: Vector2) -> float:
+	return atan2(-dir.x, -dir.y)
 
 func _center_of(b: Dictionary) -> Vector2:
 	var d: Dictionary = Config.BUILDINGS[b["type"]]
@@ -335,11 +353,20 @@ func stars() -> int:
 	return s
 
 # ---------------------------------------------------------------- orders
+## A command targeted at a soldier also reaches their bonded Nivians, so they
+## answer the same order together rather than fighting on their own.
+func _matches_order(u: Dictionary, unit_id: int) -> bool:
+	if unit_id == 0:
+		return true
+	if u["id"] == unit_id:
+		return true
+	return int(u.get("bonded_to", 0)) == unit_id
+
 func focus(building_id: int, unit_id := 0) -> void:
 	for u in units:
 		if u["dead"]:
 			continue
-		if unit_id != 0 and u["id"] != unit_id:
+		if not _matches_order(u, unit_id):
 			continue
 		u["directive"] = "focus"
 		u["focus_id"] = building_id
@@ -352,7 +379,7 @@ func hold(unit_id := 0) -> void:
 	for u in units:
 		if u["dead"]:
 			continue
-		if unit_id != 0 and u["id"] != unit_id:
+		if not _matches_order(u, unit_id):
 			continue
 		u["directive"] = "hold"
 		u["path"] = []
@@ -361,7 +388,7 @@ func proceed(unit_id := 0) -> void:
 	for u in units:
 		if u["dead"]:
 			continue
-		if unit_id != 0 and u["id"] != unit_id:
+		if not _matches_order(u, unit_id):
 			continue
 		u["directive"] = "auto"
 		u["focus_id"] = 0
@@ -377,12 +404,14 @@ func move_to(tile: Vector2i, unit_id: int) -> void:
 		return
 	if _astar.is_point_solid(tile):
 		return
-	u["directive"] = "move"
-	u["move_to"] = tile
-	u["target_id"] = 0
-	u["wall_id"] = 0
-	u["path"] = _path_to(u["pos"], [tile])
-	u["path_i"] = 0
+	for other in units:
+		if not other["dead"] and _matches_order(other, unit_id):
+			other["directive"] = "move"
+			other["move_to"] = tile
+			other["target_id"] = 0
+			other["wall_id"] = 0
+			other["path"] = _path_to(other["pos"], [tile])
+			other["path_i"] = 0
 
 # ---------------------------------------------------------------- simulation
 func update(dt: float) -> void:
@@ -472,8 +501,10 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 	var hitting: Dictionary = wall if not wall.is_empty() else ({} if u["directive"] == "move" else target)
 	if not hitting.is_empty() and _distance_to(hitting, u["pos"]) <= float(d["range"]) + 0.35:
 		u["attacking"] = true
+		u["stuck_timer"] = 0.0
+		u["stuck_anchor"] = u["pos"]
 		var c := _center_of(hitting)
-		u["facing"] = atan2(c.x - u["pos"].x, c.y - u["pos"].y)
+		u["facing"] = _face(c - u["pos"])
 		if u["cooldown"] <= 0.0:
 			u["cooldown"] = float(d["rate"])
 			if float(d["range"]) > 1.2:
@@ -484,7 +515,36 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 				_damage_building(hitting, float(d["atk"]))
 		return
 	if u["directive"] == "hold":
+		u["stuck_timer"] = 0.0
+		u["stuck_anchor"] = u["pos"]
 		return
+
+	# Jam recovery: two units can end up nose to nose in a gateway or a narrow
+	# gap, each trying to occupy the tile the other is standing on. Nothing
+	# routes around a live unit (only buildings are obstacles to the
+	# pathfinder), so without this they push against each other forever. If a
+	# unit has made almost no progress for a little while, it steps to one
+	# side -- consistently, by id parity, so a symmetric face-off actually
+	# resolves instead of both units picking the same side -- and re-plans.
+	u["stuck_timer"] = float(u.get("stuck_timer", 0.0)) + dt
+	if u["stuck_timer"] >= 0.6:
+		var anchor: Vector2 = u.get("stuck_anchor", u["pos"])
+		var moved: float = u["pos"].distance_to(anchor)
+		u["stuck_timer"] = 0.0
+		u["stuck_anchor"] = u["pos"]
+		if moved < 0.2:
+			var aim: Vector2 = u["pos"] + Vector2(1, 0)
+			if not target.is_empty():
+				aim = _center_of(target)
+			var dir: Vector2 = aim - u["pos"]
+			if dir.length() < 0.01:
+				dir = Vector2(1, 0)
+			dir = dir.normalized()
+			var side := 1.0 if (int(u["id"]) % 2 == 0) else -1.0
+			u["pos"] += Vector2(-dir.y, dir.x) * side * 0.55
+			u["path"] = []
+			u["path_i"] = 0
+			u["repath"] = 0.0
 
 	# walk
 	if u["path"].is_empty() and u["repath"] <= 0.0:
@@ -523,7 +583,7 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 	else:
 		u["pos"] += delta / dist * step
 	if dist > 0.001:
-		u["facing"] = atan2(delta.x, delta.y)
+		u["facing"] = _face(delta)
 
 ## Nudge troops apart so they do not pile onto one pixel.
 func _separate() -> void:
