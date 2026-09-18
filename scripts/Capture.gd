@@ -639,6 +639,36 @@ func _run_catch_test() -> void:
 	Game.advance(Config.CATCH_SECONDS + 1.0)
 	print("[catch] after the trip: '%s' bonded=%s (expect ready, two Nivians)" % [soldier["status"], soldier["bonded"]])
 	main._on_walk(false)
+
+	# enlisting: a soldier keeps the Nivian(s) they already bonded as a
+	# civilian rather than being handed a fresh pair, and if that leaves them
+	# one short they head for the forest for it the same as anyone else
+	Game.state["resources"]["serge"] = 100000.0
+	Game.state["resources"]["jade"] = 100000.0
+	if not Game.has_built("barracks_h"):
+		Game.build("barracks_h", 30, 30)
+	if not Game.has_built("guard_station"):
+		Game.build("guard_station", 40, 30)
+	for b in Game.buildings():
+		if b["type"] in ["barracks_h", "guard_station"]:
+			b["build_remaining"] = 0.0
+	# _free_citizen() enlists whoever is first in line, not necessarily the
+	# citizen we just added, so give that one the single Nivian instead
+	var recruit := Game._free_citizen()
+	recruit["bonded"] = ["firon"]
+	var train_err := Game.train("knight")
+	var item: Dictionary = Game.state["queues"]["barracks_h"].back()
+	print("[catch] enlist a one-Nivian citizen: train_err='%s' queued bonded=%s (expect just ['firon'], not a fresh pair)" % [train_err, item.get("bonded", [])])
+	item["remaining"] = 0.0
+	Game.advance(0.1)
+	var recruit_unit := {}
+	for u in Game.state["army"]:
+		if u["citizen_id"] == recruit["id"]:
+			recruit_unit = u
+	print("[catch] fresh soldier this tick: status='%s' bonded=%s (expect catching, still just one)" % [recruit_unit.get("status", "?"), recruit_unit.get("bonded", [])])
+	Game.advance(Config.CATCH_SECONDS + 1.0)
+	print("[catch] after their own trip: status='%s' bonded=%s (expect ready, two Nivians incl. the original firon)" % [recruit_unit["status"], recruit_unit["bonded"]])
+
 	print("[catch] DONE")
 	get_tree().quit()
 

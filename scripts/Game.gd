@@ -316,7 +316,7 @@ func train_error(type: String) -> String:
 	if not has_built(barracks):
 		return "Requires a finished %s." % Config.BUILDINGS[barracks]["name"]
 	if state["army"].size() >= Config.MAX_SOLDIERS:
-		return "You already command %d soldiers, the most Castle Level One allows." % Config.MAX_SOLDIERS
+		return "You already command %d soldiers with %d bonded Nivians between them -- the most Castle Level One allows." % [Config.MAX_SOLDIERS, Config.MAX_SOLDIERS * Config.BONDED_PER_SOLDIER]
 	if not can_afford(u["cost"]):
 		return "Not enough resources."
 	var cap := capacities()
@@ -343,13 +343,16 @@ func train(type: String) -> String:
 		return err
 	var u: Dictionary = Config.UNITS[type]
 	spend(u["cost"])
-	# Enlisting turns a civilian into a soldier and bonds them to two Nivians,
-	# who fight only when this soldier is sent into battle.
+	# Enlisting turns a civilian into a soldier. Their Nivians go with them --
+	# whichever they already bonded as a civilian, not a fresh pair conjured
+	# at the barracks door. A citizen who only ever bonded one heads for the
+	# forest for their second the moment they join up, same as any soldier
+	# who comes home from a raid short of theirs (see the "catching" branch
+	# in _tick()) -- there is exactly one way to get a Nivian in this game.
 	var c := _free_citizen()
 	c["profession"] = "Soldier"
 	var bonded: Array[String] = []
-	for i in Config.BONDED_PER_SOLDIER:
-		bonded.append(random_kin())
+	bonded.append_array(c["bonded"])
 	var item := {"type": type, "remaining": float(u["time"]), "citizen_id": c["id"], "bonded": bonded}
 	state["queues"][u["barracks"]].append(item)
 	army_changed.emit()
