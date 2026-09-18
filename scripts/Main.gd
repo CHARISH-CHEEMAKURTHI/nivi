@@ -140,6 +140,8 @@ func _on_attack(kingdom_id: String) -> void:
 	if world.walk_mode:
 		_on_walk(false)
 	battle = BattleState.new(kingdom, roster, Game.state["king"]["status"] == "ready", Game.state["king"]["bonded"])
+	# everyone who came is drawn up on the muster ground from the start
+	battle.muster()
 	_results_shown = false
 
 	world.queue_free()
@@ -160,7 +162,6 @@ func _on_attack(kingdom_id: String) -> void:
 	battle_world.tapped_building.connect(_on_battle_building)
 	battle_world.tapped_ground.connect(_on_battle_ground)
 	battle_world.tapped_unit.connect(_on_battle_unit)
-	battle_hud.pick_troop.connect(_on_pick_troop)
 	battle_hud.pick_squad.connect(func(type: String, count: int) -> void:
 		battle.select_squad(type, count)
 		battle_hud.refresh(battle_world.deploy_type))
@@ -169,22 +170,6 @@ func _on_attack(kingdom_id: String) -> void:
 	battle_hud.order_deselect.connect(_on_deselect)
 	battle_hud.end_battle.connect(_on_end_battle)
 	battle_hud.refresh("")
-
-func _on_pick_troop(type: String) -> void:
-	# the King is still placed by hand, tap the ground where he should land;
-	# every other soldier deploys straight into the staging area
-	if type == "king":
-		battle_world.deploy_type = "" if battle_world.deploy_type == type else type
-		battle.selected_id = 0
-		battle_world.show_deploy_hint(battle_world.deploy_type != "")
-		battle_hud.refresh(battle_world.deploy_type)
-		return
-	var err := battle.deploy(type)
-	if err != "":
-		Sfx.play("error")
-		return
-	Sfx.play("deploy")
-	battle_hud.refresh(battle_world.deploy_type)
 
 func _on_deselect() -> void:
 	battle.selected_id = 0
@@ -200,8 +185,6 @@ func _on_battle_unit(u: Dictionary) -> void:
 	battle_hud.refresh("")
 
 func _on_battle_building(b: Dictionary) -> void:
-	if battle_world.deploy_type != "":
-		return
 	if not battle.selected_ids.is_empty():
 		var err := battle.order_attack(int(b["id"]))
 		if err != "":
@@ -214,17 +197,6 @@ func _on_battle_building(b: Dictionary) -> void:
 	battle_hud.refresh("")
 
 func _on_battle_ground(tile: Vector2i) -> void:
-	if battle_world.deploy_type != "":
-		var err := battle.deploy(battle_world.deploy_type, tile)
-		if err != "":
-			Sfx.play("error")
-			return
-		Sfx.play("deploy")
-		if battle_world.deploy_type == "king" or int(battle.available_counts().get(battle_world.deploy_type, 0)) == 0:
-			battle_world.deploy_type = ""
-			battle_world.show_deploy_hint(false)
-		battle_hud.refresh(battle_world.deploy_type)
-		return
 	if not battle.selected_ids.is_empty():
 		Sfx.play("error")
 		return

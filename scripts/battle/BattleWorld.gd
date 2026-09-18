@@ -21,6 +21,7 @@ var _king_id := 0
 
 var _building_nodes: Dictionary = {}
 var _unit_nodes: Dictionary = {}
+var _mounted: Dictionary = {}      ## unit id -> true while its model is the ridden one
 var _shot_nodes: Array = []
 var _deploy_hint: MeshInstance3D
 var _selection: MeshInstance3D
@@ -34,6 +35,12 @@ func setup(battle: BattleState) -> void:
 	island.grid_size = Config.BATTLE_GRID
 	island.seed_value = int(state.kingdom["seed"])
 	add_child(island)
+	# the enemy's valley: mountains all round, with the pass on the north
+	# side where the army musters
+	var half := Config.BATTLE_GRID * 0.5 + 3.0 + 4.0
+	Island.add_ground_and_mountains(self, Rect2(-half, -half, half * 2.0, half * 2.0),
+		Vector3(0, 0, -half), Config.BATTLE_GRID - 4.0, int(state.kingdom["seed"]))
+	_build_muster_ground()
 	rig = CameraRig.new()
 	rig.bounds = Config.BATTLE_GRID * 0.5 + 2.0
 	add_child(rig)
@@ -41,6 +48,7 @@ func setup(battle: BattleState) -> void:
 	rig.set_zoom(46.0)
 	_fp = FirstPersonCam.new()
 	add_child(_fp)
+	rig.camera.make_current()
 
 	for b in state.buildings:
 		var d: Dictionary = Config.BUILDINGS[b["type"]]
@@ -67,6 +75,21 @@ func setup(battle: BattleState) -> void:
 			col = Color("ffe08a")
 		mb.sphere(Vector3.ZERO, 0.14, col, 7, 5)
 		_shot_mesh[kind] = mb.commit()
+
+## The muster ground at the mouth of the pass: a flagstone apron with a
+## banner at each end, so it reads as the place the army waits.
+func _build_muster_ground() -> void:
+	var r := BattleState.staging_rect_tiles()
+	var b := MeshBuilder.new()
+	var c := Config.building_origin(r.position.x, r.position.y, r.size.x, r.size.y, Config.BATTLE_GRID)
+	b.rounded_slab(Vector3(c.x, 0.0, c.z), Vector3(r.size.x, 0.05, r.size.y + 0.4), 0.6, 3, Palette.STONE_DARK, Palette.STONE)
+	for x in range(-r.size.x / 2, r.size.x / 2, 3):
+		b.box(Vector3(c.x + x + 1.5, 0.05, c.z - 0.9), Vector3(1.4, 0.02, 0.06), Palette.STONE_DARK)
+	for sx in [-1.0, 1.0]:
+		var p := Vector3(c.x + sx * (r.size.x * 0.5 - 0.5), 0.05, c.z + 0.9)
+		b.cylinder(p, 0.06, 0.06, 1.8, Palette.WOOD_DARK, 5)
+		b.box(p + Vector3(sx * 0.02, 1.3, 0), Vector3(0.05, 0.42, 0.5), Palette.CLOTH_BLUE)
+	add_child(MeshBuilder.instance(b.commit()))
 
 func _ring(col: Color) -> MeshInstance3D:
 	var b := MeshBuilder.new()
@@ -101,12 +124,13 @@ func set_first_person(on: bool) -> String:
 	joystick = Vector2.ZERO
 	rig.blocked = on
 	rig.keys_enabled = not on
+	rig.rotation_enabled = not on
 	if on:
 		_king_id = int(k["id"])
 		state.set_manual(_king_id, true)
 		state.selected_id = 0
 		_fp.enable(true, float(k["facing"]))
-		_fp.update_pose(tile_to_world(k["pos"]), false)
+		_fp.update_pose(tile_to_world(k["pos"]), str(k.get("mount", "")) != "")
 	else:
 		if not k.is_empty():
 			state.set_manual(_king_id, false)
@@ -137,10 +161,10 @@ func _walk_king(delta: float) -> void:
 		var fwd := _fp.forward()
 		var right := _fp.right()
 		var dir := (right * move.x - fwd * move.y).normalized()
-		var speed := float(Config.UNITS["king"]["speed"]) * 1.3
+		var speed := state.speed_of(k) * 1.3
 		state.move_manual(_king_id, Vector2(dir.x, dir.z) * speed * delta)
 	k["facing"] = _fp.yaw
-	_fp.update_pose(tile_to_world(k["pos"]), false)
+	_fp.update_pose(tile_to_world(k["pos"]), str(k.get("mount", "")) != "")
 
 func _process(delta: float) -> void:
 	if state == null or state.ended:
@@ -161,10 +185,16 @@ func _sync_units() -> void:
 				_fall(_unit_nodes[id])
 				_unit_nodes.erase(id)
 			continue
+		var mounted: bool = str(u.get("mount", "")) != ""
 		if not _unit_nodes.has(id):
-			var node := MeshBuilder.instance(Troops.build(u["type"]))
+			var node := MeshBuilder.instance(Troops.rider(u["type"]) if mounted else Troops.build(u["type"]))
 			add_child(node)
 			_unit_nodes[id] = node
+			_mounted[id] = mounted
+		elif _mounted.get(id, false) and not mounted:
+			# the Unitone fell: the rider carries on afoot
+			(_unit_nodes[id] as MeshInstance3D).mesh = Troops.build(u["type"])
+			_mounted[id] = false
 		var n: Node3D = _unit_nodes[id]
 		n.position = tile_to_world(u["pos"])
 		n.rotation.y = u["facing"]
@@ -230,6 +260,9 @@ func _play_event(e: Dictionary) -> void:
 			_spark(tile_to_world(e["pos"]) + Vector3(0, 0.8, 0), "cannon")
 			Sfx.play("cannon", 1.0, 0.06)
 		"fell":
+			Sfx.play("fell")
+		"mount_fell":
+			_puff(tile_to_world(e["pos"]) + Vector3(0, 0.4, 0))
 			Sfx.play("fell")
 
 func _puff(at: Vector3) -> void:

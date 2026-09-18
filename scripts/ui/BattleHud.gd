@@ -3,7 +3,6 @@ extends CanvasLayer
 ## The raid interface: clock and score along the top, troop cards along the
 ## bottom, and the orders you can give whatever is selected.
 
-signal pick_troop(type: String)
 signal pick_squad(type: String, count: int)
 signal order_hold
 signal order_proceed
@@ -21,8 +20,6 @@ var _stars_shown := -1
 var _loot: Dictionary = {}
 var _hint: Label
 var _selected: Label
-var _troop_row: HBoxContainer
-var _troop_key := ""
 var _staging_row: HBoxContainer
 var _staging_key := ""
 var _btn_view: Button
@@ -51,6 +48,8 @@ func _ready() -> void:
 	_set_stars(0)
 	_loot["serge"] = _plaque(top, "Serge", "0")
 	_loot["jade"] = _plaque(top, "Jade", "0")
+	top.add_child(_turn_button("< Turn", -1.0))
+	top.add_child(_turn_button("Turn >", 1.0))
 	var end := Button.new()
 	end.text = "End Raid"
 	end.theme_type_variation = "RedButton"
@@ -99,19 +98,12 @@ func _ready() -> void:
 
 	_staging_row = HBoxContainer.new()
 	_staging_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_staging_row.position = Vector2(0, -92)
+	_staging_row.position = Vector2(0, -16)
 	_staging_row.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_staging_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_staging_row.add_theme_constant_override("separation", 10)
 	root.add_child(_staging_row)
 
-	_troop_row = HBoxContainer.new()
-	_troop_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_troop_row.position = Vector2(0, -16)
-	_troop_row.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_troop_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_troop_row.add_theme_constant_override("separation", 10)
-	root.add_child(_troop_row)
 
 func _set_stars(earned: int) -> void:
 	if earned == _stars_shown:
@@ -127,6 +119,19 @@ func _set_stars(earned: int) -> void:
 		t.custom_minimum_size = Vector2(30, 30)
 		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_star_holder.add_child(t)
+
+## Hold to swing the view round; Z and X or a right-button drag do the same.
+func _turn_button(text: String, direction: float) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.theme_type_variation = "WoodButton"
+	b.button_down.connect(func() -> void:
+		if _world != null:
+			_world.rig.rotate_input = direction)
+	b.button_up.connect(func() -> void:
+		if _world != null:
+			_world.rig.rotate_input = 0.0)
+	return b
 
 func _order_button(text: String, variation: String, cb: Callable) -> Button:
 	var b := Button.new()
@@ -191,60 +196,14 @@ func refresh(deploy_type: String) -> void:
 		_selected.text = "%s  %d HP" % [Config.UNITS[sel["type"]]["name"], int(ceil(sel["hp"]))]
 	if fp:
 		_hint.text = "Through the King's eyes: WASD or the stick walk him, drag or Q/E look around. He strikes whatever is in reach."
-	elif not state.started:
-		_hint.text = "Pick a troop below to send them to the staging area."
 	elif squad_n > 0:
 		_hint.text = "Tap a building to send this squad at it."
 	elif not sel.is_empty():
 		_hint.text = "Tap the ground to move the King." if sel["type"] == "king" else "Tap a building to focus this troop."
 	else:
-		_hint.text = "Use the staging area below to pick soldiers, or tap a deployed troop to give it orders."
+		_hint.text = "Your army waits on the muster ground. Pick soldiers below and tap a building to send them, or tap the King and tap the ground to walk him."
 
 	_refresh_staging()
-
-	var counts := state.available_counts()
-	var types: Array = counts.keys()
-	types.sort()
-	if state.king_available and not state.king_deployed:
-		types.push_front("king")
-	var key := str(types) + str(counts) + deploy_type
-	if key == _troop_key:
-		return
-	_troop_key = key
-	for c in _troop_row.get_children():
-		c.queue_free()
-	if types.is_empty():
-		var none := Label.new()
-		none.text = "No troops left"
-		none.theme_type_variation = "ValueLabel"
-		_troop_row.add_child(none)
-		return
-	for type in types:
-		_troop_row.add_child(_troop_card(type, int(counts.get(type, 1)), type == deploy_type))
-
-func _troop_card(type: String, count: int, active: bool) -> Control:
-	var card := PanelContainer.new()
-	card.theme_type_variation = "Card"
-	if active:
-		card.modulate = Color(1.0, 0.92, 0.6)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 0)
-	col.add_child(Thumb.unit(type, 74))
-	var n := Label.new()
-	n.text = "%s  x%d" % [Config.UNITS[type]["name"], count] if type != "king" else "The King"
-	n.add_theme_font_size_override("font_size", 14)
-	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(n)
-	var pick := Button.new()
-	pick.text = "Deploy"
-	pick.theme_type_variation = "GreenButton" if not active else "GoldButton"
-	pick.add_theme_font_size_override("font_size", 14)
-	pick.pressed.connect(func() -> void:
-		Sfx.play("tap")
-		pick_troop.emit(type))
-	col.add_child(pick)
-	card.add_child(col)
-	return card
 
 ## The staging area: soldiers already deployed, standing by for a squad
 ## command. Rebuilt whenever the staged counts or the current pick change.

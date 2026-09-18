@@ -58,10 +58,12 @@ func _ready() -> void:
 	add_child(island)
 	forest = Forest.new()
 	add_child(forest)
+	# the valley floor and the mountains that ring kingdom and forest together
+	Island.add_ground_and_mountains(self, Config.land_rect(), Vector3.ZERO, 0.0, 3)
 	rig = CameraRig.new()
-	rig.bounds = Config.GRID * 0.5 + 2.0
-	# the camera may travel east as far as the forest
-	rig.bounds_max.x = forest.center.x + forest.half
+	var land := Config.land_rect()
+	rig.bounds_min = land.position
+	rig.bounds_max = land.end
 	add_child(rig)
 	_king = MeshBuilder.instance(Troops.build("king"))
 	add_child(_king)
@@ -72,6 +74,10 @@ func _ready() -> void:
 	add_child(_fp)
 	townsfolk = Townsfolk.new()
 	add_child(townsfolk)
+	# Say so explicitly: when this world replaces a raid, the raid's cameras
+	# are still alive until the end of the frame, so the viewport would not
+	# pick ours on its own -- and could settle on the wrong one when they go.
+	rig.camera.make_current()
 	rig.tapped.connect(_on_tapped)
 	rig.pressed.connect(_on_pressed)
 	rig.drag_moved.connect(_on_drag_moved)
@@ -183,6 +189,7 @@ func set_first_person(on: bool) -> void:
 		set_walk_mode(true)
 	first_person = on
 	rig.blocked = on
+	rig.rotation_enabled = not on
 	_fp.enable(on, _king_facing)
 	_king.visible = not on
 	if _mount_node != null:
@@ -293,7 +300,7 @@ func throw_ball() -> void:
 	var w := forest.nearest_wild(king_pos, Config.THROW_RANGE)
 	if w.is_empty():
 		Sfx.play("error")
-		caught.emit("No wild Nivian in reach. Walk closer in the forest." if king_in_forest() else "The wild Nivians live in the forest, over the bridge to the east.", false)
+		caught.emit("No wild Nivian in reach. Walk closer in the forest." if king_in_forest() else "The wild Nivians live in the forest, down the lane south of the kingdom.", false)
 		return
 	var err := Game.catch_error(str(w["type"]))
 	if err != "":

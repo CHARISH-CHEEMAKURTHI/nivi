@@ -1,11 +1,11 @@
 class_name Townsfolk
 extends Node3D
-## The citizens out and about, each with their bonded Nivian trailing behind.
-## They keep to the roads: a figure walks a random route from road tile to
-## road tile and never steps onto the grass, so laying roads is what opens the
-## town up to them. Without any road they wait in the square before the
-## Castle. Soldiers are stationed indoors and do not appear. Only the King
-## may roam wherever he likes.
+## The people out and about, each with their bonded Nivians trailing behind:
+## every civilian, and every soldier who is home and ready (a soldier with a
+## Unitone rides it). They keep to the roads: a figure walks a random route
+## from road tile to road tile and never steps onto the grass, so laying
+## roads is what opens the town up to them. Without any road they wait in the
+## square before the Castle. Only the King may roam wherever he likes.
 
 const WALK_SPEED := 1.55
 const FOLLOW_GAP := 0.75
@@ -78,9 +78,14 @@ func _sync() -> void:
 	for c in Game.state["citizens"]:
 		if c["profession"] != "Soldier":
 			want[int(c["id"])] = c
+		else:
+			var u := Game.unit_for_citizen(int(c["id"]))
+			if not u.is_empty() and u["status"] == "ready":
+				want[int(c["id"])] = u
 	for i in range(_folk.size() - 1, -1, -1):
 		var f: Dictionary = _folk[i]
-		if not want.has(f["cid"]):
+		# gone, or changed between civilian and soldier: rebuild the figure
+		if not want.has(f["cid"]) or bool(f["soldier"]) != (want[f["cid"]] as Dictionary).has("status"):
 			(f["node"] as Node3D).queue_free()
 			for fl in f["followers"]:
 				(fl["node"] as Node3D).queue_free()
@@ -89,15 +94,26 @@ func _sync() -> void:
 			want.erase(f["cid"])
 	for cid in want:
 		var c: Dictionary = want[cid]
-		var node := MeshBuilder.instance(Troops.citizen(cid))
+		var bonded: Array = c.get("bonded", []).duplicate()
+		var node: MeshInstance3D
+		if c.has("status"):
+			# a soldier: on foot, or riding their Unitone if they have one
+			if bonded.has("unitone"):
+				bonded.erase("unitone")
+				node = MeshBuilder.instance(Troops.rider(str(c["type"])))
+			else:
+				node = MeshBuilder.instance(Troops.build(str(c["type"])))
+		else:
+			node = MeshBuilder.instance(Troops.citizen(cid))
 		add_child(node)
 		var followers: Array = []
-		for kind in c.get("bonded", []):
+		for kind in bonded:
 			var fn := MeshBuilder.instance(Troops.build(str(kind)))
 			add_child(fn)
 			followers.append({"type": kind, "node": fn, "pos": Vector3.ZERO})
 		var f := {"cid": cid, "node": node, "pos": Vector3.ZERO, "tile": Vector2i(-1, -1), "from": Vector2i(-1, -1),
-			"target": Vector3.ZERO, "wait": 0.0, "dir": Vector3(0, 0, -1), "followers": followers, "seed": _folk.size()}
+			"target": Vector3.ZERO, "wait": 0.0, "dir": Vector3(0, 0, -1), "followers": followers, "seed": _folk.size(),
+			"soldier": c.has("status")}
 		_folk.append(f)
 		_settle(f)
 

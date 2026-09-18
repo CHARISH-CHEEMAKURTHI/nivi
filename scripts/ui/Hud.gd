@@ -253,10 +253,23 @@ func _build_bottom(root: Control) -> void:
 
 	var right := HBoxContainer.new()
 	right.add_theme_constant_override("separation", 8)
+	right.add_child(_turn_button("< Turn", -1.0))
+	right.add_child(_turn_button("Turn >", 1.0))
 	right.add_child(_button("Collect", "GoldButton", func() -> void: _collect_all()))
 	right.add_child(_button("Menu", "WoodButton", func() -> void: show_menu()))
 	right.add_child(_button("Attack", "RedButton", func() -> void: show_attack()))
 	bar.add_child(right)
+
+## Hold to swing the view round; Z and X or a right-button drag do the same.
+func _turn_button(text: String, direction: float) -> Button:
+	var b := _button(text, "WoodButton")
+	b.button_down.connect(func() -> void:
+		if world != null:
+			world.rig.rotate_input = direction)
+	b.button_up.connect(func() -> void:
+		if world != null:
+			world.rig.rotate_input = 0.0)
+	return b
 
 func _collect_all() -> void:
 	var got := Game.collect_all()
@@ -795,6 +808,8 @@ func _build_walk_bar(root: Control) -> void:
 	row.add_theme_constant_override("separation", 10)
 	_walk_hint = _label("")
 	row.add_child(_walk_hint)
+	row.add_child(_turn_button("<", -1.0))
+	row.add_child(_turn_button(">", 1.0))
 	row.add_child(_button("Throw", "GoldButton", func() -> void: request_throw.emit()))
 	_btn_ride = _button("Ride", "", func() -> void: request_mount.emit())
 	row.add_child(_btn_ride)
@@ -997,17 +1012,17 @@ func show_help() -> void:
 	var body := _open_modal("How to Play")
 	for line in [
 		"Drag with one finger or the mouse to pan. Two fingers pan and pinch-zoom on a trackpad or touchscreen too.",
-		"Scroll to zoom, or hold Q to zoom in and E to zoom out. WASD and the arrow keys pan.",
+		"Scroll to zoom, or hold Q to zoom in and E to zoom out. WASD and the arrow keys pan. Hold Turn, Z or X, or drag with the right mouse button, to swing the view round.",
 		"Tap a building to inspect it. Mines fill up over time, so tap them or press Collect.",
 		"Build, pick a building, drag it where you want it and press Place.",
 		"Walls and roads work differently: press down and drag across the ground in any direction to lay a whole run, the way Clash of Clans does. Press Done when you are finished, no need to confirm each tile.",
 		"Homes raise the population. Every citizen bonds one Nivian, rarely two; the King can bond up to five.",
-		"Press Walk (or K) to take the King on foot: WASD, the arrows or the on-screen stick move him and the camera follows. Cross the bridge east to the forest, get close to a wild Nivian and press Throw (Space) or tap it to throw a Nivian ball. The closer you are, the better it sticks.",
+		"Press Walk (or K) to take the King on foot: WASD, the arrows or the on-screen stick move him and the camera follows. Take the lane south into the forest, get close to a wild Nivian and press Throw (Space) or tap it to throw a Nivian ball. The closer you are, the better it sticks.",
 		"First person (or V) puts you behind the King's eyes: drag or Q/E to look around, WASD to walk the way you face. Ride climbs onto one of his Nivians for a faster trip; a Unitone is quickest. It works in raids too, once the King is deployed.",
 		"Townsfolk and their Nivians walk the roads you lay and never leave them; with no roads they gather in the square before the Castle. Only the King goes wherever he pleases.",
 		"A soldier who loses a Nivian in a raid walks to the forest on their own and comes back with another; the King's you catch yourself.",
 		"Barracks H enlists citizens as soldiers. Each soldier automatically bonds two Nivians, who fight only when that soldier is sent into battle. Up to 15 soldiers, housed by Guard Stations, Outposts and the Cavalry Outpost.",
-		"Attack picks a target. Deploy soldiers to the staging area, pick how many of each join the next order, then tap a building to send that squad, Nivians and all. Nobody attacks until told.",
+		"Attack picks a target. Your whole army is already standing on the muster ground at the mountain pass when you arrive, the King among them. Pick how many of each type join the next order, then tap a building to send that squad. A soldier's Nivians go with them: a Unitone carries them, a Firon or Garuan fights at their side. Nobody attacks until told.",
 		"Stars come from 50% destruction, the enemy Castle, and a clean sweep.",
 		"Soldiers who fall may be lost for good. The rest heal, faster once you have a Hospital.",
 	]:

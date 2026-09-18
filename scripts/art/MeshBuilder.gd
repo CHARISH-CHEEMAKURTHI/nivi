@@ -163,6 +163,56 @@ func pyramid(pos: Vector3, size: Vector3, col: Color, yaw := 0.0, overhang := 0.
 		tri(p[(k + 1) % 4], apex, p[k], shade)
 	quad(p[3], p[2], p[1], p[0], col.darkened(0.4))
 
+## A limb: a faceted tube from `a` to `b`, any orientation, optionally
+## tapering. What legs, necks, tails and horns are made of.
+func beam(a: Vector3, b: Vector3, r_a: float, col: Color, r_b := -1.0, segs := 6) -> void:
+	if r_b < 0.0:
+		r_b = r_a
+	var axis := b - a
+	var length := axis.length()
+	if length < 1e-5:
+		return
+	axis /= length
+	var helper := Vector3.UP if absf(axis.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+	var u := axis.cross(helper).normalized()
+	var v := axis.cross(u).normalized()
+	var ring_a: Array[Vector3] = []
+	var ring_b: Array[Vector3] = []
+	for s in segs:
+		var t := TAU * float(s) / float(segs)
+		var off := u * cos(t) + v * sin(t)
+		ring_a.append(a + off * r_a)
+		ring_b.append(b + off * r_b)
+	for s in segs:
+		var n := (s + 1) % segs
+		var shade: Color = col.darkened(0.10) if s % 2 == 0 else col
+		quad(ring_a[s], ring_b[s], ring_b[n], ring_a[n], shade)
+		tri(a, ring_a[n], ring_a[s], col.darkened(0.3))
+		tri(b, ring_b[s], ring_b[n], col.lightened(0.05))
+
+## An ellipsoid: a sphere stretched independently along each axis, yawed
+## about Y. Bodies, heads and muzzles.
+func ellipsoid(center: Vector3, radii: Vector3, col: Color, yaw := 0.0, segs := 10, rings := 6) -> void:
+	for r in rings:
+		var p0 := PI * float(r) / float(rings)
+		var p1 := PI * float(r + 1) / float(rings)
+		for s in segs:
+			var t0 := TAU * float(s) / float(segs)
+			var t1 := TAU * float(s + 1) / float(segs)
+			var pt := func(phi: float, theta: float) -> Vector3:
+				var local := Vector3(sin(phi) * cos(theta) * radii.x, cos(phi) * radii.y, sin(phi) * sin(theta) * radii.z)
+				return center + local.rotated(Vector3.UP, yaw)
+			var a: Vector3 = pt.call(p0, t0)
+			var b: Vector3 = pt.call(p1, t0)
+			var c: Vector3 = pt.call(p1, t1)
+			var d: Vector3 = pt.call(p0, t1)
+			if r == 0:
+				tri(c, b, a, col)
+			elif r == rings - 1:
+				tri(d, b, a, col)
+			else:
+				quad(d, c, b, a, col)
+
 ## Blobby sphere, used for tree canopies and bushes.
 func sphere(center: Vector3, radius: float, col: Color, segs := 10, rings := 6, squash := 1.0) -> void:
 	for r in rings:

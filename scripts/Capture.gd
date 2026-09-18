@@ -507,7 +507,15 @@ func _run_squad_test() -> void:
 		if e != "":
 			print("[squad] deploy failed: ", e)
 	print("[squad] staged after deploy: %s (expect knight=2 cavalry=1)" % [b.staged_counts()])
-	print("[squad] total units in staging (soldiers + bonded Nivians): %d (expect 9)" % b.units.size())
+	var riders := 0
+	var escorts := 0
+	for u in b.units:
+		if str(u.get("mount", "")) != "":
+			riders += 1
+		if int(u.get("bonded_to", 0)) != 0:
+			escorts += 1
+	print("[squad] riders=%d escorts=%d (expect 2 riders, 4 escorts; nobody's Nivian is a unit of its own)" % [riders, escorts])
+	print("[squad] total units on the muster ground: %d (expect 7: three soldiers, two of them riding a Unitone, plus four walking escorts)" % b.units.size())
 
 	# nobody has been ordered anywhere yet -- run the clock and confirm not one
 	# hit point of damage happens on its own
@@ -544,6 +552,14 @@ func _run_squad_test() -> void:
 				break
 	print("[squad] ordered knights reached and struck the Castle by t=%.1fs (expect well under 25s)" % t)
 	print("[squad] un-ordered cavalry drifted=%.2f while its squadmates fought (expect ~0)" % cav["pos"].distance_to(cav_start))
+	# the escorts went with their knights and stayed at their sides, not off on their own
+	var far := 0
+	for u in b.units:
+		if int(u.get("bonded_to", 0)) != 0:
+			var leader := b.find_unit(int(u["bonded_to"]))
+			if u["pos"].distance_to(leader["pos"]) > 1.6:
+				far += 1
+	print("[squad] escorts more than 1.6 tiles from their soldier: %d (expect 0)" % far)
 	for i in 300:
 		b.update(step)
 	var castle_now := {}
@@ -564,10 +580,11 @@ func _run_catch_test() -> void:
 	var world: BaseWorld = main.world
 	var forest: Forest = world.forest
 	var edge: float = Config.GRID * 0.5 + 3.0
-	print("[catch] forest centre x=%.1f half=%.1f wild=%d (expect %d)" % [forest.center.x, forest.half, forest.wild_count(), Config.WILD_NIVIANS])
-	print("[catch] land: castle=%s bridge=%s forest=%s sea beside bridge=%s sea past forest=%s (expect T T T F F)" % [
-		forest.on_land(Vector3.ZERO), forest.on_land(Vector3(edge + 6.0, 0, 0)), forest.on_land(forest.center),
-		forest.on_land(Vector3(edge + 6.0, 0, 8.0)), forest.on_land(forest.center + Vector3(forest.half + 3.0, 0, 0))])
+	var land := Config.land_rect()
+	print("[catch] forest centre z=%.1f half=%s wild=%d (expect %d), valley %s" % [forest.center.z, forest.half, forest.wild_count(), Config.WILD_NIVIANS, land])
+	print("[catch] land: castle=%s lane=%s forest=%s beyond the east mountains=%s past the forest south=%s (expect T T T F F)" % [
+		forest.on_land(Vector3.ZERO), forest.on_land(Vector3(0, 0, edge + 1.0)), forest.on_land(forest.center),
+		forest.on_land(Vector3(land.end.x + 6.0, 0, 0)), forest.on_land(Vector3(0, 0, land.end.y + 6.0))])
 
 	# walking: stick held for a second moves the King and the camera follows
 	main._on_walk(true)
@@ -749,10 +766,10 @@ func _run_view_test() -> void:
 	main._on_attack("greywater")
 	var bw: BattleWorld = main.battle_world
 	var b: BattleState = main.battle
-	print("[view] raid, King not deployed: '%s'" % bw.set_first_person(true))
-	b.deploy("king", Vector2i(4, 20))
-	var err := bw.set_first_person(true)
 	var k := bw.king_unit()
+	print("[view] raid opens with the King already mustered: deployed=%s on the muster ground=%s (expect true true)" % [
+		b.king_deployed, BattleState.staging_rect_tiles().has_point(Vector2i(int(k["pos"].x), int(k["pos"].y)))])
+	var err := bw.set_first_person(true)
 	print("[view] King deployed: err='%s' directive=%s fp cam current=%s" % [err, k["directive"], bw._fp.camera.current])
 	bw._fp.yaw = -PI * 0.5   # look east (+X), into the base
 	var kstart: Vector2 = k["pos"]

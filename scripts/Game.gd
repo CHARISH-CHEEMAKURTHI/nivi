@@ -383,6 +383,19 @@ func random_kin() -> String:
 			kinds.append(id)
 	return kinds[randi() % kinds.size()]
 
+func unit_for_citizen(citizen_id: int) -> Dictionary:
+	for u in state["army"]:
+		if int(u.get("citizen_id", 0)) == citizen_id:
+			return u
+	return {}
+
+## What a soldier short of a Nivian brings back: Cavalry go for a Unitone to
+## ride first, anyone else takes whatever the forest offers.
+func kin_for(u: Dictionary) -> String:
+	if u["type"] == "cavalry" and not u["bonded"].has("unitone"):
+		return "unitone"
+	return random_kin()
+
 func unit_name(u: Dictionary) -> String:
 	for c in state["citizens"]:
 		if c["id"] == int(u.get("citizen_id", 0)):
@@ -516,7 +529,7 @@ func _tick(dt: float) -> void:
 			if u["catch_remaining"] <= 0.0:
 				u["catch_remaining"] = 0.0
 				while u["bonded"].size() < Config.BONDED_PER_SOLDIER:
-					u["bonded"].append(random_kin())
+					u["bonded"].append(kin_for(u))
 				u["status"] = "ready"
 				log_line("%s came back from the forest with a %s." % [unit_name(u), Config.UNITS[u["bonded"].back()]["name"]])
 				army_changed.emit()

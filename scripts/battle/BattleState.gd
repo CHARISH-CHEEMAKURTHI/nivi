@@ -27,6 +27,7 @@ var selected_id := 0            ## a single already-committed unit, tapped for H
 var selected_ids: Array = []    ## soldiers picked in the staging area, pending a squad command
 
 var loot := {"serge": 0.0, "jade": 0.0}
+var mounts_lost: Array = []     ## Unitones that fell under their rider: {id (roster), type}
 var _loot_total := {}
 var _loot_weights := 0.0
 var _next_id := 1
@@ -201,13 +202,28 @@ func can_deploy_at(tile: Vector2i) -> bool:
 				return false
 	return true
 
-## Two rows just inside the map edge, at y < BATTLE_BUILD_MIN, where no
-## enemy building can ever be generated -- a standing area safely clear of
-## the base where every deployed soldier (and their bonded Nivians) wait on
-## a squad command instead of wandering in and fighting on their own.
+## The muster ground: two rows just inside the map edge at the mountain
+## pass, at y < BATTLE_BUILD_MIN where no enemy building can ever stand. The
+## whole army is already drawn up here when the raid opens and waits, every
+## soldier with their Nivians, on a squad command.
 func _staging_tile(index: int) -> Vector2i:
 	var span: int = Config.BATTLE_GRID - 4
 	return Vector2i(2 + (index % span), mini(index / span, Config.BATTLE_BUILD_MIN - 1))
+
+static func staging_rect_tiles() -> Rect2i:
+	return Rect2i(2, 0, Config.BATTLE_GRID - 4, Config.BATTLE_BUILD_MIN)
+
+## Draws the whole army up on the muster ground, the King included. There is
+## no deploying troops one by one any more: everyone who came is standing
+## here from the first second, and nobody moves until ordered.
+func muster() -> void:
+	var slot := 0
+	for entry in available.duplicate():
+		deploy(str(entry["type"]), _staging_tile(slot))
+		slot += 1
+	if king_available and not king_deployed:
+		deploy("king")
+	started = true
 
 func deploy(type: String, tile := Vector2i(-1, -1)) -> String:
 	if ended:
@@ -215,13 +231,13 @@ func deploy(type: String, tile := Vector2i(-1, -1)) -> String:
 	if type == "king":
 		if not king_available or king_deployed:
 			return "The King is not available."
-		if not can_deploy_at(tile):
+		if tile == Vector2i(-1, -1):
+			tile = _staging_tile(units.size())
+		elif not can_deploy_at(tile):
 			return "Drop him clear of enemy buildings."
 		king_deployed = true
-		var king_id := _spawn_unit("king", tile, 0)
 		# roster id -1 marks a Nivian as the King's own when it falls
-		for creature_type in king_bonded:
-			_spawn_unit(str(creature_type), tile, -1, king_id)
+		_spawn_party("king", tile, 0, king_bonded, "hold")
 		started = true
 		return ""
 	var idx := -1
@@ -234,21 +250,36 @@ func deploy(type: String, tile := Vector2i(-1, -1)) -> String:
 	var roster_id := int(available[idx]["id"])
 	var bonded: Array = available[idx].get("bonded", [])
 	available.remove_at(idx)
-	var stage := _staging_tile(units.size())
-	# A soldier and their bonded Nivians land together in the staging area and
-	# hold there -- they never pick a fight on their own. They only move out,
-	# together, once a squad command sends them at a building.
-	var soldier_id := _spawn_unit(type, stage, roster_id, 0, "hold")
-	for creature_type in bonded:
-		_spawn_unit(str(creature_type), stage, roster_id, soldier_id, "hold")
+	if tile == Vector2i(-1, -1):
+		tile = _staging_tile(units.size())
+	_spawn_party(type, tile, roster_id, bonded, "hold")
 	started = true
 	return ""
 
-func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0, directive := "auto") -> int:
+## A soldier (or the King) with their Nivians, as one party: a Unitone among
+## them is ridden, so its speed and its hit points become the rider's; any
+## other Nivian walks at their side as an escort that follows and fights
+## what they fight, never off on its own.
+func _spawn_party(type: String, tile: Vector2i, roster_id: int, bonded: Array, directive: String) -> int:
+	var kinds: Array = bonded.duplicate()
+	var mount := ""
+	if kinds.has("unitone"):
+		mount = "unitone"
+		kinds.erase("unitone")
+	var leader_id := _spawn_unit(type, tile, roster_id, 0, directive, mount)
+	var slot := 0
+	for creature_type in kinds:
+		var eid := _spawn_unit(str(creature_type), tile, -1 if roster_id == 0 else roster_id, leader_id, directive)
+		find_unit(eid)["escort_slot"] = slot
+		slot += 1
+	return leader_id
+
+func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0, directive := "auto", mount := "") -> int:
 	var d: Dictionary = Config.UNITS[type]
 	var id := _next_id
 	units.append({
-		"id": id, "roster_id": roster_id, "type": type, "bonded_to": bonded_to,
+		"id": id, "roster_id": roster_id, "type": type, "bonded_to": bonded_to, "escort_slot": 0,
+		"mount": mount, "mount_hp": float(Config.UNITS[mount]["hp"]) if mount != "" else 0.0,
 		"pos": Vector2(tile.x + TILE_CENTER + randf_range(-0.3, 0.3), tile.y + TILE_CENTER + randf_range(-0.3, 0.3)),
 		"hp": float(d["hp"]), "max_hp": float(d["hp"]), "cooldown": 0.0,
 		"target_id": 0, "wall_id": 0, "path": [], "path_i": 0, "repath": 0.0,
@@ -258,6 +289,12 @@ func _spawn_unit(type: String, tile: Vector2i, roster_id: int, bonded_to := 0, d
 	})
 	_next_id += 1
 	return id
+
+## How fast a unit covers ground: a ridden Unitone sets the pace.
+func speed_of(u: Dictionary) -> float:
+	if str(u.get("mount", "")) != "":
+		return float(Config.UNITS[u["mount"]]["speed"])
+	return float(Config.UNITS[u["type"]]["speed"])
 
 # ---------------------------------------------------------------- squads
 ## Soldiers waiting in the staging area, grouped by type -- what the squad
@@ -601,6 +638,9 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 	u["cooldown"] = maxf(0.0, u["cooldown"] - dt)
 	u["repath"] -= dt
 	u["attacking"] = false
+	if int(u.get("bonded_to", 0)) != 0:
+		_update_escort(u, d, dt)
+		return
 
 	var wall := find_building(int(u["wall_id"])) if u["wall_id"] != 0 else {}
 	if not wall.is_empty() and wall["hp"] <= 0.0:
@@ -703,7 +743,7 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 	var goal := Vector2(node.x + TILE_CENTER, node.y + TILE_CENTER)
 	var delta: Vector2 = goal - u["pos"]
 	var dist: float = delta.length()
-	var step := float(d["speed"]) * dt
+	var step := speed_of(u) * dt
 	if dist <= step:
 		u["pos"] = goal
 		u["path_i"] += 1
@@ -711,6 +751,56 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 		u["pos"] += delta / dist * step
 	if dist > 0.001:
 		u["facing"] = _face(delta)
+
+## An escort Nivian keeps its place at its soldier's side and fights what
+## the soldier fights. It never picks a path or a target of its own; if its
+## soldier falls it is on its own from then on and fights like any troop.
+func _update_escort(u: Dictionary, d: Dictionary, dt: float) -> void:
+	var leader := find_unit(int(u["bonded_to"]))
+	if leader.is_empty() or leader["dead"]:
+		u["bonded_to"] = 0
+		u["directive"] = "auto"
+		u["committed"] = true
+		return
+	# the slot at the leader's shoulder: left or right, a step behind
+	var f: float = leader["facing"]
+	var fwd := Vector2(-sin(f), -cos(f))
+	var right := Vector2(fwd.y, -fwd.x)
+	var side := -1.0 if int(u.get("escort_slot", 0)) % 2 == 0 else 1.0
+	var want: Vector2 = leader["pos"] - fwd * 0.45 + right * side * 0.55
+	var gap: Vector2 = want - u["pos"]
+	var dist := gap.length()
+	if dist > 0.18:
+		var pace := maxf(float(d["speed"]), speed_of(leader) * 1.25)
+		u["pos"] += gap / dist * minf(pace * dt, dist)
+		u["facing"] = _face(gap)
+	else:
+		u["facing"] = f
+	# strike what the soldier is striking, or whatever else is within reach
+	var hitting := {}
+	for id in [int(leader["wall_id"]), int(leader["target_id"])]:
+		if id != 0:
+			var b := find_building(id)
+			if not b.is_empty() and b["hp"] > 0.0 and _distance_to(b, u["pos"]) <= float(d["range"]) + 0.35:
+				hitting = b
+				break
+	if hitting.is_empty() and (leader["attacking"] or leader["directive"] != "hold"):
+		for b in buildings:
+			if b["hp"] > 0.0 and _distance_to(b, u["pos"]) <= float(d["range"]) + 0.35:
+				hitting = b
+				break
+	if hitting.is_empty():
+		return
+	u["attacking"] = true
+	u["facing"] = _face(_center_of(hitting) - u["pos"])
+	if u["cooldown"] <= 0.0:
+		u["cooldown"] = float(d["rate"])
+		if float(d["range"]) > 1.2:
+			projectiles.append({"kind": str(d.get("element", "water")), "pos": u["pos"], "height": 0.6,
+				"target_building": int(hitting["id"]), "target_unit": 0, "speed": 9.0, "damage": float(d["atk"])})
+		else:
+			events.append({"kind": "melee", "pos": u["pos"]})
+			_damage_building(hitting, float(d["atk"]))
 
 ## Nudge troops apart so they do not pile onto one pixel.
 func _separate() -> void:
@@ -808,6 +898,16 @@ func _damage_unit(u: Dictionary, amount: float) -> void:
 	if u.is_empty() or u["dead"]:
 		return
 	var d: Dictionary = Config.UNITS[u["type"]]
+	# a ridden Unitone takes the blow first; when it falls the rider fights on
+	if str(u.get("mount", "")) != "" and float(u["mount_hp"]) > 0.0:
+		u["mount_hp"] = float(u["mount_hp"]) - amount
+		if float(u["mount_hp"]) > 0.0:
+			return
+		mounts_lost.append({"id": -1 if u["type"] == "king" else u["roster_id"], "type": u["mount"]})
+		events.append({"kind": "mount_fell", "id": int(u["id"]), "pos": u["pos"]})
+		u["mount"] = ""
+		u["mount_hp"] = 0.0
+		return
 	u["hp"] -= amount * (1.0 - float(d.get("armor", 0.0)))
 	if u["hp"] > 0.0:
 		return
@@ -825,6 +925,7 @@ func result() -> Dictionary:
 			fallen.append({"id": u["roster_id"], "type": u["type"]})
 		else:
 			survivors += 1
+	fallen.append_array(mounts_lost)
 	return {
 		"enemy_name": kingdom["name"], "stars": stars(), "destruction": destruction(),
 		"loot": {"serge": loot["serge"], "jade": loot["jade"]},

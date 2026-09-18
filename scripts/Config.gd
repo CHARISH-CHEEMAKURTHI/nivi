@@ -34,12 +34,14 @@ const BONDED_FOR_KING := 5
 ## second, rarer one instead.
 const RARE_SECOND_CREATURE_CHANCE := 0.15
 
-## The forest: a second, smaller island off the home island's east coast,
-## joined to it by a bridge. Wild Nivians live there. A soldier who loses a
-## bonded Nivian in a raid walks over on their own and comes back with
-## another after CATCH_SECONDS; the King has to go and catch his in person.
-const FOREST_GRID := 36            ## forest island tiles across
-const FOREST_GAP := 14.0           ## open water between the two islands' grass
+## The forest: a wooded plot just south of the kingdom, inside the same ring
+## of mountains and joined to it by a dirt lane. Wild Nivians live there. A
+## soldier who loses a bonded Nivian in a raid walks down on their own and
+## comes back with another after CATCH_SECONDS; the King has to go and catch
+## his in person.
+const FOREST_GRID := 36            ## forest plot tiles across
+const FOREST_GAP := 2.0            ## grass between the kingdom's edge and the wood
+const MOUNTAIN_MARGIN := 8.0       ## open ground between the plots and the mountains
 const WILD_NIVIANS := 8            ## how many roam the forest at once
 const WILD_RESPAWN_SECONDS := 18.0 ## a caught one is replaced after this long
 const THROW_RANGE := 4.5           ## how far the King can throw a Nivian ball
@@ -132,13 +134,13 @@ const BUILDINGS := {
 		"provides": {"heal_speed": 4, "profession": "Healer"},
 	},
 	"road": {
-		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 40,
+		"name": "Road", "category": "support", "w": 1, "h": 1, "hp": 0, "limit": 150,
 		"cost": {"serge": 3, "jade": 2}, "time": 0.0, "flat": true, "passable": true,
 		"desc": "Cobbled path. Decorative, but a tidy kingdom is a happy one.",
 		"provides": {"happiness": 0.25},
 	},
 	"wall": {
-		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 50,
+		"name": "Wall", "category": "defense", "w": 1, "h": 1, "hp": 300, "limit": 200,
 		"cost": {"serge": 14, "jade": 6}, "time": 0.0, "wall": true,
 		"desc": "Defensive perimeter. Attackers must break through or walk around.",
 	},
@@ -257,10 +259,17 @@ static func tile_to_world(tx: int, ty: int, grid: int = GRID) -> Vector3:
 static func world_to_tile(p: Vector3, grid: int = GRID) -> Vector2i:
 	return Vector2i(int(floor(p.x + grid * 0.5)), int(floor(p.z + grid * 0.5)))
 
-## Where the forest island sits: its grass edge FOREST_GAP east of the home
-## island's grass edge, centred on the bridge that joins them along z = 0.
+## Where the forest plot sits: its grass edge FOREST_GAP south of the
+## kingdom's, centred on the lane that joins them along x = 0.
 static func forest_center() -> Vector3:
-	return Vector3(GRID * 0.5 + 3.0 + FOREST_GAP + FOREST_GRID * 0.5 + 3.0, 0.0, 0.0)
+	return Vector3(0.0, 0.0, GRID * 0.5 + 3.0 + FOREST_GAP + FOREST_GRID * 0.5 + 3.0)
+
+## The valley floor the King (and anyone else) can walk: kingdom and forest
+## together, out to where the mountains begin. World X/Z.
+static func land_rect() -> Rect2:
+	var kingdom_half := GRID * 0.5 + 3.0 + MOUNTAIN_MARGIN
+	var south := forest_center().z + FOREST_GRID * 0.5 + 3.0 + MOUNTAIN_MARGIN
+	return Rect2(-kingdom_half, -kingdom_half, kingdom_half * 2.0, kingdom_half + south)
 
 ## World position for the centre of a building's footprint.
 static func building_origin(tx: int, ty: int, w: int, h: int, grid: int = GRID) -> Vector3:

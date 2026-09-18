@@ -19,6 +19,8 @@ const MAX_ZOOM := 220.0
 const DEADZONE := 6.0            ## screen pixels before a press counts as a drag
 const KEY_ZOOM_RATE := 1.15      ## multiplicative zoom speed per second for Q/E
 const PAN_GESTURE_SCALE := 45.0  ## screen-pixel-equivalent per trackpad pan unit
+const ROTATE_RATE := 95.0        ## degrees per second while a turn button or key is held
+const ROTATE_DRAG := 0.32        ## degrees per pixel of right-button drag
 
 ## How far the rig may travel. `bounds` sets a square centred on the origin;
 ## the min/max pair lets a world extend it one way (the forest lies east of
@@ -33,6 +35,15 @@ var bounds_max := Vector2(30, 30)
 
 ## Off while the King is being walked by hand, since WASD steers him then.
 var keys_enabled := true
+
+## Turning the view: the yaw the rig currently sits at, and a held input of
+## -1 / 0 / +1 from the on-screen turn buttons (Z / X on the keyboard, or a
+## right-button drag, do the same). Off through the King's eyes, which turn
+## themselves.
+var yaw_deg := YAW
+var rotate_input := 0.0
+var rotation_enabled := true
+var _rot_drag := false
 
 var camera: Camera3D
 var _zoom := 40.0
@@ -79,6 +90,12 @@ func _ready() -> void:
 	camera.near = 0.5
 	camera.far = 420.0
 	add_child(camera)
+
+## Turns the view about the point it looks at. Panning, the King's walking
+## and screen-to-ground picking all read the rig's basis, so they follow.
+func rotate_view(delta_deg: float) -> void:
+	yaw_deg = fmod(yaw_deg + delta_deg, 360.0)
+	rotation_degrees = Vector3(PITCH, yaw_deg, 0)
 
 func set_zoom(z: float) -> void:
 	_zoom = clamp(z, MIN_ZOOM, MAX_ZOOM)
@@ -137,7 +154,10 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_RIGHT:
 		if not blocked:
 			_pan_by_screen(Vector2(70.0, 0))
-	elif mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT:
+	elif mb.button_index == MOUSE_BUTTON_RIGHT:
+		# the right button turns the view rather than panning it
+		_rot_drag = mb.pressed
+	elif mb.button_index == MOUSE_BUTTON_LEFT:
 		if mb.pressed:
 			# `blocked` only ever suppresses the camera actually panning (see
 			# _continue_press); the press itself must still be tracked so a
@@ -151,6 +171,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 			_end_press(mb.position)
 
 func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
+	if _rot_drag and rotation_enabled:
+		rotate_view(-mm.relative.x * ROTATE_DRAG)
+		return
 	if not _pointer_down:
 		return
 	_continue_press(mm.relative, mm.position)
@@ -265,6 +288,12 @@ func _process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): move.x += 1
 	if move != Vector2.ZERO and not blocked:
 		_pan_by_screen(-move.normalized() * 620.0 * delta)
+	if rotation_enabled:
+		var turn := rotate_input
+		if Input.is_key_pressed(KEY_Z): turn -= 1.0
+		if Input.is_key_pressed(KEY_X): turn += 1.0
+		if turn != 0.0:
+			rotate_view(-clampf(turn, -1.0, 1.0) * ROTATE_RATE * delta)
 	# Q zooms in, E zooms out: a steady multiplicative rate so it feels the
 	# same whether you are zoomed in tight or pulled all the way back.
 	if Input.is_key_pressed(KEY_Q):

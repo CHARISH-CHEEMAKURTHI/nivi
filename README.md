@@ -5,9 +5,9 @@ mine Serge and Jade, train soldiers and creatures, then lead a raid on your
 neighbours in person.
 
 Built in **Godot 4.3** as a native game. It runs in 3D with an isometric
-camera, so the buildings have real volume and cast real shadows, and the same
-project can grow into the first-person combat layer the design document plans
-for later.
+camera you can turn, so the buildings have real volume and cast real shadows,
+and a first-person view through the King's own eyes for walking the streets
+or leading a raid from the front.
 
 ![The base](docs/base.png)
 
@@ -37,6 +37,7 @@ Windows, Linux, macOS and Android are already set up in `export_presets.cfg`.
 | --- | --- |
 | Pan | Drag with a mouse, one finger or one touchpad finger, or `W` `A` `S` `D` / arrow keys |
 | Zoom | Scroll wheel, pinch (touchpad or touchscreen), or hold `Q` to zoom in / `E` to zoom out |
+| Turn the view | Hold **< Turn** / **Turn >**, hold `Z` / `X`, or drag with the right mouse button |
 | Inspect a building | Tap it. A light tap never nudges the camera first, so it always hits what is under it |
 | Collect a full mine | Tap it again, or press **Collect** |
 | Build (most buildings) | **Build**, choose a building, drag it into place, press **Place** |
@@ -53,19 +54,23 @@ A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
 trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
 finger drags and taps, two fingers pan and pinch-zoom together.
 
-In a raid: pick a troop card to deploy that soldier (and their two bonded
-Nivians) straight to the staging area, well clear of the enemy base. Nobody
-fights on their own from there. Use the staging card's **-** and **+** to
-pick how many of that type join the next order, then tap a building to send
-exactly that squad at it; their bonded Nivians go with them automatically.
-Tap an already-committed troop to select it alone, then **Hold** pauses it
-and **Proceed** resumes it. The King is still deployed like a troop and
-walks wherever you tap, free of the staging area and squad orders.
+In a raid there is nothing to deploy: everyone who came, the King included,
+is already drawn up on the flagstone muster ground at the mouth of the
+mountain pass when you arrive, and nobody moves until told. Use a staging
+card's **-** and **+** to pick how many of that type join the next order,
+then tap a building to send exactly that squad at it. A soldier's Nivians
+go as part of them: a Unitone carries its soldier and takes the first blows
+(if it falls, the rider fights on afoot), while a Firon or Garuan walks at
+their soldier's side and strikes whatever the soldier strikes, never off on
+its own. Tap an already-committed troop to select it alone, then **Hold**
+pauses it and **Proceed** resumes it. Tap the King and tap the ground to
+walk him, or switch to first person and lead from the front.
 
-The forest lies across a plank bridge off the east coast. Wild Nivians
-wander its meadow; a caught one is replaced after a while, so it never runs
-dry. The King bonds no Nivians by decree: walk him over and throw a Nivian
-ball at one from a few steps away. The closer you stand, the better it
+The kingdom sits on a plateau in a valley walled by mountains; the forest
+is the wood just south of it, down a dirt lane. Wild Nivians wander its
+meadow; a caught one is replaced after a while, so it never runs dry. The
+King bonds no Nivians by decree: walk him down and throw a Nivian ball at
+one from a few steps away. The closer you stand, the better it
 sticks; a miss sends the Nivian bolting. He keeps up to five, and once he is
 full a catch goes to any soldier short of their two. Firon will not bond
 with a ruler under twenty credits. Soldiers make the same trip on their own:
@@ -92,14 +97,15 @@ Everything the design document lists for Castle Level One, section 5:
 | **Serge and Jade mines, and their stores** | Mines fill over time and are tapped to collect. Stores raise the ceiling. Jade mines run a little faster than Serge, to offset how many buildings draw on Serge. |
 | **Support buildings** | Homes, farms, shops, taverns, hospital, roads and walls, all now costing a mix of Serge and Jade rather than leaning on one currency. |
 | **Military stationing** | Guard Stations and Outposts house the army; the Law Enforcer Ground Cavalry Outpost houses cavalry alone. |
-| **The home island** | Ten times the buildable area of the original plot, so a full set of buildings no longer tiles the whole island by Castle Level Two. |
+| **The valley** | A plateau ten times the buildable area of the original plot, on open land ringed by mountains, with the forest just south of the walls. A raid map is the same: the enemy's valley, entered through a mountain pass. |
 | **Short-Fire Cannon** | The single Castle One defence: short range, fast rate of fire. |
 | **First person and the streets** | A perspective camera at the King's eyes, in the kingdom and in raids; mounting his Nivians; and townsfolk who walk the roads, and only the roads, with their Nivians in tow. |
-| **The forest** | A second island, bridged to the home coast, where wild Nivians roam. The King catches his own in person, on foot with a Nivian ball; soldiers who lose one in a raid go and bond another off-screen. The King's Nivians fight beside him in a raid. |
+| **The forest** | The wood south of the kingdom, where wild Nivians roam. The King catches his own in person, on foot with a Nivian ball; soldiers who lose one in a raid go and bond another off-screen. |
+| **Nivians in a raid** | A Unitone is ridden: its speed becomes its rider's and it takes the first blows. A Firon or Garuan walks at its soldier's side and fights what the soldier fights. No Nivian is ever a unit on its own. The King's are the same. |
 | **Population and bonding** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Every citizen bonds one Nivian, rarely two; a soldier bonds exactly two, who fight only when that soldier is sent into battle, never trained or sent in on their own; the King can bond up to five. Up to 15 soldiers total. |
-| **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |
+| **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. Modelled as proper beasts: the Unitone a water-horse with a streaming mane, the Firon a bear of ember and hide, the Garuan an upright kangaroo-like hopper with a heavy tail. |
 | **Credits** | Festivals and taxes move happiness and karma. Firon only bonds with a ruler holding twenty credits or more. |
-| **Raids** | Three enemy kingdoms with procedurally arranged bases. Deployed soldiers wait in a staging area until a squad command sends a chosen number of them, with their bonded Nivians, at a chosen building; nobody attacks unordered. Troops route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |
+| **Raids** | Three enemy kingdoms with procedurally arranged bases. The army musters at the mountain pass and waits until a squad command sends a chosen number of them, with their Nivians, at a chosen building; nobody attacks unordered. Troops route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |
 | **Consequence** | Soldiers who fall may be lost for good, taking their citizen with them. The rest are injured and recover, far faster once a Hospital stands. |
 
 Left for later milestones, as the document recommends: Magic Circles,
@@ -143,12 +149,12 @@ scripts/art/MeshBuilder  Builds low-poly models from coloured primitives
 scripts/art/Palette.gd   One shared colour palette
 scripts/art/Buildings.gd A model for every Castle One building
 scripts/art/Troops.gd    Models for soldiers, creatures and the King
-scripts/world/Island.gd  The island: grass, beach, sea, trees and rocks
-scripts/world/Forest.gd  The forest island, its bridge, and the wild Nivians
+scripts/world/Island.gd  A grass plateau, the valley floor and its ring of mountains
+scripts/world/Forest.gd  The forest south of the kingdom and the wild Nivians
 scripts/world/FirstPersonCam.gd  The King's eyes: a perspective camera for both scenes
 scripts/world/Townsfolk.gd  Citizens and their Nivians walking the roads
 scripts/world/BaseWorld  Your kingdom in 3D: placement, selection, collection
-scripts/world/CameraRig  Isometric camera: pan, zoom, tap
+scripts/world/CameraRig  Isometric camera: pan, zoom, turn, tap
 scripts/world/WorldEnv   Sun, sky and shadow settings shared by both scenes
 scripts/battle/BattleState  Raid logic: enemy bases, troop AI, cannons, loot
 scripts/battle/BattleWorld  The raid, drawn
@@ -160,7 +166,7 @@ scripts/audio/Synth.gd   A small software synthesiser: oscillators and envelopes
 scripts/audio/Sfx.gd     Every sound effect, rendered at startup, plus the settings
 scripts/audio/Music.gd   The two looping tracks, composed and rendered on a thread
 scripts/Capture.gd       Development helper: render a frame, or simulate a raid
-shaders/                 Water and grass
+shaders/                 Grass
 ```
 
 ## Tuning

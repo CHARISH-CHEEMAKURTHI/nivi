@@ -1,13 +1,14 @@
 class_name Forest
 extends Node3D
-## The wild wood off the home island's east coast, joined to it by a plank
-## bridge. Wild Nivians wander its meadow; the King walks over and throws a
-## Nivian ball to catch one, and a soldier who lost theirs in a raid makes the
-## same trip off-screen. Nothing here touches the save: caught Nivians are
-## handed to Game, and the forest simply grows another one after a while.
+## The wild wood just south of the kingdom, inside the same ring of
+## mountains, joined to it by a dirt lane. Wild Nivians wander its meadow;
+## the King walks down and throws a Nivian ball to catch one, and a soldier
+## who lost theirs in a raid makes the same trip off-screen. Nothing here
+## touches the save: caught Nivians are handed to Game, and the forest simply
+## grows another one after a while.
 
 var center := Vector3.ZERO
-var half := 0.0                    ## grass half-extent of the forest island
+var half := Vector2.ZERO           ## half-extents of the forest plot
 
 var _wild: Array = []              ## {type, node, pos, target, wait, flee, from}
 var _respawn: Array = []           ## seconds until each replacement appears
@@ -17,61 +18,42 @@ var _bob_seed := 0
 func _ready() -> void:
 	_rng.seed = 7
 	center = Config.forest_center()
-	half = Config.FOREST_GRID * 0.5 + 3.0
-	var island := Island.new()
-	island.grid_size = Config.FOREST_GRID
-	island.seed_value = 7
-	island.sea = false
-	island.forest = true
-	island.position = center
-	add_child(island)
-	_build_bridge()
+	half = Vector2(Config.FOREST_GRID * 0.5 + 3.0, Config.FOREST_GRID * 0.5 + 3.0)
+	var plot := Island.new()
+	plot.grid_size = Config.FOREST_GRID
+	plot.seed_value = 7
+	plot.forest = true
+	plot.position = center
+	add_child(plot)
+	_build_lane()
 	for i in Config.WILD_NIVIANS:
 		_spawn_wild()
 
-## The plank bridge along z = 0, from the home island's grass edge to the
-## forest's, with posts and a rail down each side.
-func _build_bridge() -> void:
+## A dirt lane from the kingdom's south edge down into the wood, so the way
+## in reads on the map.
+func _build_lane() -> void:
 	var b := MeshBuilder.new()
-	var x0: float = Config.GRID * 0.5 + 3.0 - 1.2
-	var x1: float = center.x - half + 1.2
-	var n := int(ceil((x1 - x0) / 0.62))
-	for i in n:
-		var px := x0 + i * 0.62 + 0.31
-		b.box(Vector3(px, 0.0, 0), Vector3(0.58, 0.14, 3.2), Palette.WOOD if i % 2 == 0 else Palette.WOOD_LIGHT)
-	for sz in [-1.5, 1.5]:
-		b.box(Vector3((x0 + x1) * 0.5, -0.12, sz), Vector3(x1 - x0, 0.16, 0.22), Palette.WOOD_DARK)
-		b.box(Vector3((x0 + x1) * 0.5, 0.86, sz), Vector3(x1 - x0, 0.08, 0.1), Palette.WOOD_DARK)
-		var x := x0 + 0.4
-		while x < x1:
-			b.box(Vector3(x, 0.0, sz), Vector3(0.14, 0.94, 0.14), Palette.WOOD_DARK)
-			x += 3.0
-	# pilings down into the water
-	var x2 := x0 + 1.5
-	while x2 < x1:
-		for sz2 in [-1.2, 1.2]:
-			b.cylinder(Vector3(x2, -1.4, sz2), 0.13, 0.13, 1.4, Palette.WOOD_DARK, 6)
-		x2 += 3.0
+	var z0: float = Config.GRID * 0.5 + 1.0
+	var z1: float = center.z - half.y + 8.0
+	b.rounded_slab(Vector3(0, 0.02, (z0 + z1) * 0.5), Vector3(3.0, 0.04, z1 - z0), 0.8, 3, Palette.DIRT, Palette.DIRT)
+	for i in 6:
+		var z := z0 + 1.0 + i * (z1 - z0 - 2.0) / 5.0
+		b.sphere(Vector3(1.9, 0.06, z), 0.22, Palette.ROCK_DARK, 5, 3, 0.6)
+		b.sphere(Vector3(-1.9, 0.06, z + 0.9), 0.2, Palette.ROCK, 5, 3, 0.6)
 	add_child(MeshBuilder.instance(b.commit()))
 
 # ---------------------------------------------------------------- walkable ground
-## Whether a point on the ground is land the King can stand on: the home
-## island, the bridge, or the forest island.
+## Whether a point on the ground is inside the valley: everything within the
+## ring of mountains, kingdom and forest alike.
 func on_land(p: Vector3) -> bool:
-	var home_half: float = Config.GRID * 0.5 + 3.0
-	if absf(p.x) <= home_half and absf(p.z) <= home_half:
-		return true
-	if p.x >= home_half - 1.5 and p.x <= center.x - half + 1.5 and absf(p.z) <= 1.4:
-		return true
-	return absf(p.x - center.x) <= half and absf(p.z - center.z) <= half
+	return Config.land_rect().has_point(Vector2(p.x, p.z))
 
 func in_forest(p: Vector3) -> bool:
-	return absf(p.x - center.x) <= half and absf(p.z - center.z) <= half
+	return absf(p.x - center.x) <= half.x and absf(p.z - center.z) <= half.y
 
 # ---------------------------------------------------------------- wild Nivians
 func _random_spot() -> Vector3:
-	var r := half - 2.5
-	return center + Vector3(_rng.randf_range(-r, r), 0.0, _rng.randf_range(-r, r))
+	return center + Vector3(_rng.randf_range(-half.x + 2.5, half.x - 2.5), 0.0, _rng.randf_range(-half.y + 2.5, half.y - 2.5))
 
 func _spawn_wild() -> void:
 	var kinds: Array = Config.CREATURES.keys()
