@@ -21,10 +21,10 @@ export const RESOURCES = {
 // Building categories drive the build menu tabs.
 export const CATEGORIES = [
   { id: 'core', name: 'Core' },
-  { id: 'resource', name: 'Resources' },
-  { id: 'military', name: 'Military' },
+  { id: 'resource', name: 'Mines' },
+  { id: 'military', name: 'Army' },
   { id: 'defense', name: 'Defense' },
-  { id: 'support', name: 'Support' },
+  { id: 'support', name: 'Town' },
 ];
 
 // Section 5 of the GDD: the confirmed Castle Level One building set.

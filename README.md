@@ -1,9 +1,13 @@
 # Nivi · Castle Level One
 
-A 2D pixel-art kingdom-builder in the spirit of Clash of Clans, built as the
-first playable milestone described in the project's game design document:
+A 2D pixel-art kingdom-builder with a Clash of Clans style interface, built as
+the first playable milestone described in the project's game design document:
 **top-down base building, Castle Level One only**, running in the browser with
 no build step.
+
+The world is pixel art; the UI around it is the familiar wood-and-gold game
+interface: rounded resource bars with gem icons, chunky 3D buttons, and
+parchment windows with gold frames.
 
 ![Base view](docs/base.png)
 
@@ -48,7 +52,7 @@ character creation.
 
 ```
 index.html        page shell and HUD markup
-styles.css        hologram-styled UI
+styles.css        Clash of Clans style UI: wood, gold, parchment, 3D buttons
 server.js         zero-dependency static server
 src/config.js     all game data: buildings, units, creature ratios, kingdoms (placeholder numbers)
 src/state.js      new game, grid helpers, save/load

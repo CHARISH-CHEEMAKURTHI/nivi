@@ -8,7 +8,7 @@ import { countType } from './state.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmtTime = (sec) => { sec = Math.max(0, Math.ceil(sec)); const m = Math.floor(sec / 60), s = sec % 60; return m ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`; };
-const costHtml = (cost) => Object.entries(cost || {}).map(([k, v]) => `<span class="${k}">${v} ${RESOURCES[k].name}</span>`).join(' ') || '<span class="muted">free</span>';
+const costHtml = (cost) => Object.entries(cost || {}).map(([k, v]) => `<span class="${k}"><i class="gem ${k} sm"></i> ${v}</span>`).join(' ') || '<span class="muted">free</span>';
 
 export class UI {
   constructor(game) {
@@ -105,8 +105,11 @@ export class UI {
   // --- HUD ---------------------------------------------------------------------
   refreshHUD() {
     const s = this.game.state, cap = capacities(s), army = armySummary(s);
-    $('res-serge').textContent = `${Math.floor(s.resources.serge)}/${cap.storage.serge}`;
-    $('res-jade').textContent = `${Math.floor(s.resources.jade)}/${cap.storage.jade}`;
+    for (const k of ['serge', 'jade']) {
+      const have = Math.floor(s.resources[k]), max = cap.storage[k];
+      $(`res-${k}`).textContent = `${have}/${max}`;
+      $(`fill-${k}`).style.width = `${max ? Math.min(100, have / max * 100) : 0}%`;
+    }
     $('hud-pop').textContent = `${s.citizens.length}/${cap.popCap}`;
     $('hud-happy').textContent = `${happiness(s)}%`;
     $('hud-credits').textContent = (s.credits > 0 ? '+' : '') + s.credits;
@@ -136,7 +139,7 @@ export class UI {
   // --- build menu ----------------------------------------------------------------
   openBuild(cat = 'resource') {
     const s = this.game.state;
-    const tabs = CATEGORIES.map(c => `<button class="btn small ${c.id === cat ? 'active' : ''}" data-action="build-tab" data-arg="${c.id}">${c.name}</button>`).join('');
+    const tabs = CATEGORIES.map(c => `<button class="btn small ${c.id === cat ? 'active gold' : 'wood'}" data-action="build-tab" data-arg="${c.id}">${c.name}</button>`).join('');
     const cards = Object.entries(BUILDINGS).filter(([, d]) => d.category === cat).map(([id, d]) => {
       const n = countType(s, id);
       const err = d.buildable === false ? 'Pre-built' : (n >= d.limit ? 'Limit reached' : (!canAfford(s, d.cost) ? 'Too expensive' : null));
@@ -144,7 +147,7 @@ export class UI {
         <span data-thumb="b:${id}"></span>
         <div class="name">${d.name}</div>
         <div class="cost">${costHtml(d.cost)}</div>
-        <div class="count">${n}/${d.limit}${d.time ? ` · ${fmtTime(d.time)}` : ''}${err ? `<br>${err}` : ''}</div>
+        <div class="count">${n}/${d.limit}${d.time ? ` · ${fmtTime(d.time)}` : ''}${err ? `<span class="err">${esc(err)}</span>` : ''}</div>
       </div>`;
     }).join('');
     this.openPanel('build', cat, 'Build', `<div class="tabs">${tabs}</div><div class="cards">${cards}</div>
@@ -175,10 +178,10 @@ export class UI {
     if (b.type === 'castle') rows += `<div class="row"><span>Citizens sheltered</span><span>${s.citizens.length}</span></div>`;
 
     let actions = '';
-    if (d.produces && isBuilt(b)) actions += `<button class="btn small ok" data-action="b-collect" data-arg="${b.id}">Collect ${Math.floor(b.stored)}</button>`;
-    if (d.trains && isBuilt(b)) actions += `<button class="btn small" data-action="b-train" data-arg="${b.type}">Train</button>`;
+    if (d.produces && isBuilt(b)) actions += `<button class="btn small gold" data-action="b-collect" data-arg="${b.id}">Collect ${Math.floor(b.stored)}</button>`;
+    if (d.trains && isBuilt(b)) actions += `<button class="btn small green" data-action="b-train" data-arg="${b.type}">Train</button>`;
     if (b.type === 'castle') actions += `<button class="btn small" disabled title="Beyond the scope of this demo">Upgrade (locked)</button>`;
-    actions += `<button class="btn small" data-action="b-move" data-arg="${b.id}">Move</button>`;
+    actions += `<button class="btn small wood" data-action="b-move" data-arg="${b.id}">Move</button>`;
     if (b.type !== 'castle') actions += `<button class="btn small danger" data-action="b-remove" data-arg="${b.id}">Demolish</button>`;
 
     this.openPanel('info', b.id, `${d.name} · Lv ${b.level}`, `
@@ -197,7 +200,7 @@ export class UI {
         return `<div class="card ${err ? 'disabled' : ''}" ${err ? '' : `data-action="train" data-arg="${t}"`} title="${esc(u.desc)}">
           <span data-thumb="u:${t}"></span><div class="name">${u.name}</div>
           <div class="cost">${costHtml(u.cost)}</div>
-          <div class="count">${u.hp} HP · ${u.atk} ATK · ${u.housing} space · ${fmtTime(u.time)}${err ? `<br>${esc(err)}` : ''}</div></div>`;
+          <div class="count">${u.hp} HP · ${u.atk} ATK · ${u.housing} space · ${fmtTime(u.time)}${err ? `<span class="err">${esc(err)}</span>` : ''}</div></div>`;
       }).join('');
       const q = s.queues[id].map((it, i) => `<div class="q" data-action="cancel-train" data-arg="${id}:${i}" title="Tap to cancel"><span data-thumb="u:${it.type}"></span>${fmtTime(it.remaining)}</div>`).join('');
       return `<h3>${d.name}</h3><div class="cards">${cards}</div><div class="queue">${q || '<span class="muted">Queue empty</span>'}</div>`;
@@ -229,7 +232,7 @@ export class UI {
     const citizens = s.citizens.map(c => `<div class="row"><span>${esc(c.name)}, ${c.age}</span><span>${c.profession}${(bonds.get(c.id) || []).length ? ' · 1 creature' : ''}</span></div>`).join('');
     const decrees = Object.entries(DECREES).map(([id, d]) => {
       const cd = s.decreeCooldowns[id] || 0;
-      return `<button class="btn small" data-action="decree" data-arg="${id}" ${cd > 0 ? 'disabled' : ''} title="${esc(d.desc)}">${d.name}${cd > 0 ? ` (${fmtTime(cd)})` : ''}</button>`;
+      return `<button class="btn small ${id === 'festival' ? 'green' : 'gold'}" data-action="decree" data-arg="${id}" ${cd > 0 ? 'disabled' : ''} title="${esc(d.desc)}">${d.name}${cd > 0 ? ` (${fmtTime(cd)})` : ''}</button>`;
     }).join('');
     const align = s.credits >= 20 ? 'Beloved' : s.credits > 0 ? 'Respected' : s.credits === 0 ? 'Neutral' : s.credits > -20 ? 'Feared' : 'Tyrant';
     const creatureTable = Object.entries(CREATURES).map(([id, c]) => { const t = TYPE_RATIOS[c.type]; return `<div class="row"><span>${c.name} (${c.base}, ${c.type})</span><span>STR ${t.strength} · MAG ${t.magic} · DEF ${t.defense} · SPD ${c.speed} · HP ${c.hp}</span></div>`; }).join('');
@@ -257,13 +260,13 @@ export class UI {
   openAttack() {
     const s = this.game.state;
     const ready = s.army.filter(u => u.status === 'ready');
-    const list = ENEMY_KINGDOMS.map(k => `<div class="kingdom" data-action="attack-kingdom" data-arg="${k.id}">
+    const list = ENEMY_KINGDOMS.map(k => `<button class="kingdom" data-action="attack-kingdom" data-arg="${k.id}">
       <div class="n">${k.name}</div><div class="muted">${esc(k.desc)}</div>
-      <div>Loot: <span style="color:var(--serge)">${k.loot.serge} Serge</span> · <span style="color:var(--jade)">${k.loot.jade} Jade</span> · Cannons: ${k.cannons}</div></div>`).join('');
+      <div><i class="gem serge sm"></i> ${k.loot.serge} &nbsp; <i class="gem jade sm"></i> ${k.loot.jade} &nbsp; · &nbsp; Cannons: ${k.cannons}</div></button>`).join('');
     this.openModal(`<h2>Arm-Guard Hologram</h2>
       <p class="muted">Pick a kingdom to raid. You lead ${ready.length} troop${ready.length === 1 ? '' : 's'}${s.king.status === 'ready' ? ' and the King' : ''}. Troops deployed are directed live: tap one to select it, tap a building to focus, or hold and proceed.</p>
       ${ready.length === 0 && s.king.status !== 'ready' ? '<p style="color:var(--danger)">Nobody is ready to fight. Train troops first.</p>' : ''}
-      ${list}<div class="actions"><button class="btn" data-action="close-modal">Back</button></div>`);
+      ${list}<div class="actions"><button class="btn wood" data-action="close-modal">Back</button></div>`);
   }
 
   openMenu() {
@@ -271,9 +274,9 @@ export class UI {
       <p class="muted">A kingdom-builder demo. Your progress is saved in this browser automatically.</p>
       <div class="actions">
         <button class="btn" data-action="help">How to play</button>
-        <button class="btn ok" data-action="save-game">Save now</button>
+        <button class="btn green" data-action="save-game">Save now</button>
         <button class="btn danger" data-action="reset-game">New kingdom</button>
-        <button class="btn" data-action="close-modal">Close</button></div>`);
+        <button class="btn wood" data-action="close-modal">Close</button></div>`);
   }
 
   showHelp() {
@@ -290,18 +293,18 @@ export class UI {
         <li>The King is deployed like a troop and walks wherever you tap.</li>
         <li>Stars: 50% destruction, the Castle, 100% destruction. Loot comes from destroyed mines, storages and the Castle.</li>
         <li>Soldiers who fall may die permanently. The rest are injured and recover, faster with a Hospital.</li></ul>
-      <div class="actions"><button class="btn" data-action="close-modal">Close</button></div>`);
+      <div class="actions"><button class="btn green" data-action="close-modal">Close</button></div>`);
   }
 
   // --- battle ---------------------------------------------------------------------------
   enterBattle() {
-    $('hud-top').hidden = true; $('bottom-bar').hidden = true; $('objectives').hidden = true; $('place-bar').hidden = true;
+    $('hud-top').hidden = true; $('hud-stats').hidden = true; $('bottom-bar').hidden = true; $('objectives').hidden = true; $('place-bar').hidden = true;
     this.closePanel(); this.closeModal();
     $('battle-hud').hidden = false; $('hologram').hidden = false;
     this.selectedTroop = null;
   }
   exitBattle() {
-    $('hud-top').hidden = false; $('bottom-bar').hidden = false; $('objectives').hidden = false;
+    $('hud-top').hidden = false; $('hud-stats').hidden = false; $('bottom-bar').hidden = false; $('objectives').hidden = false;
     $('battle-hud').hidden = true; $('hologram').hidden = true;
   }
 
@@ -335,12 +338,12 @@ export class UI {
       <div class="stars">${'★'.repeat(result.stars)}${'☆'.repeat(3 - result.stars)}</div>
       <p class="muted">${esc(result.reason)}</p>
       <div class="row"><span>Destruction</span><span>${Math.round(result.destruction * 100)}%</span></div>
-      <div class="row"><span>Loot</span><span><span style="color:var(--serge)">${result.loot.serge} Serge</span> · <span style="color:var(--jade)">${result.loot.jade} Jade</span></span></div>
+      <div class="row"><span>Loot</span><span><i class="gem serge sm"></i> ${result.loot.serge} &nbsp; <i class="gem jade sm"></i> ${result.loot.jade}</span></div>
       <div class="row"><span>Survivors</span><span>${result.survivors}</span></div>
       <div class="row"><span>Fallen for good</span><span style="color:var(--danger)">${dead || 'none'}</span></div>
       <div class="row"><span>Injured (recovering)</span><span>${injured || 'none'}</span></div>
       ${result.fallen.some(f => f.type === 'king') ? '<p class="muted">The King was carried off the field and will recover.</p>' : ''}
-      <div class="actions"><button class="btn ok" data-action="results-close">Return home</button></div>`);
+      <div class="actions"><button class="btn green big" data-action="results-close">Return home</button></div>`);
   }
 
   showPlaceBar(label) { $('place-label').textContent = label; $('place-bar').hidden = false; }
