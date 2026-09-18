@@ -28,6 +28,12 @@ func _enter_base() -> void:
 	hud.request_place_cancel.connect(_on_place_cancel)
 	hud.request_attack.connect(_on_attack)
 	hud.request_new_game.connect(_on_new_game)
+	hud.request_walk.connect(_on_walk)
+	hud.request_throw.connect(func() -> void: world.throw_ball())
+	hud.walk_input.connect(func(v: Vector2) -> void: world.joystick = v)
+	world.caught.connect(func(msg: String, ok: bool) -> void:
+		hud.toast(msg)
+		hud.refresh_top())
 	world.rig.focus_on(Vector3.ZERO)
 	world.rig.set_zoom(26.0)
 	Music.play("kingdom")
@@ -81,6 +87,18 @@ func _on_new_game() -> void:
 	Sfx.play("done")
 	hud.toast("A new kingdom rises.")
 
+## Walking as the King: WASD or the on-screen stick move him, the camera
+## follows, and Throw catches the nearest wild Nivian in the forest.
+func _on_walk(on: bool) -> void:
+	if world == null:
+		return
+	if on and world.is_placing():
+		_on_place_cancel()
+	world.set_walk_mode(on)
+	hud.show_walk_bar(on)
+	if on:
+		hud.hide_panel()
+
 # ---------------------------------------------------------------- raid
 func _on_attack(kingdom_id: String) -> void:
 	var kingdom := {}
@@ -95,7 +113,9 @@ func _on_attack(kingdom_id: String) -> void:
 		return
 	Game.save_game()
 	Music.play("raid")
-	battle = BattleState.new(kingdom, roster, Game.state["king"]["status"] == "ready")
+	if world.walk_mode:
+		_on_walk(false)
+	battle = BattleState.new(kingdom, roster, Game.state["king"]["status"] == "ready", Game.state["king"]["bonded"])
 	_results_shown = false
 
 	world.queue_free()
@@ -226,9 +246,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if world != null and world.is_placing():
 					_on_place_cancel()
+				elif world != null and world.walk_mode and hud != null and not hud.modal_open():
+					_on_walk(false)
 				elif hud != null:
 					hud.close_modal()
 					hud.hide_panel()
+			KEY_K:
+				if world != null and hud != null and not hud.modal_open():
+					_on_walk(not world.walk_mode)
+			KEY_SPACE, KEY_F:
+				if world != null and world.walk_mode:
+					world.throw_ball()
 			KEY_B:
 				if hud != null:
 					hud.show_build("resource")

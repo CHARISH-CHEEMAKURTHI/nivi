@@ -47,6 +47,12 @@ func _run_demo() -> void:
 			_run_jam_test()
 		"squad":
 			_run_squad_test()
+		"catch":
+			await _run_catch_test()
+		"forest":
+			main._on_walk(true)
+			main.world.king_pos = main.world.forest.center + Vector3(-4, 0, 2)
+			main.world.rig.set_zoom(26.0)
 		"verify":
 			await _run_verify()
 		"econ":
@@ -539,4 +545,93 @@ func _run_squad_test() -> void:
 		if bld["type"] == "castle":
 			castle_now = bld
 	print("[squad] Castle HP 10s after first strike: %d/%d (expect below max)" % [int(castle_now["hp"]), int(castle_now["max_hp"])])
+	get_tree().quit()
+
+## Headless check of the forest and catching: the King can walk the home
+## island, the bridge and the forest but not the sea; a Nivian ball catches
+## the nearest wild Nivian and it bonds with the King (five at most, then
+## soldiers short of theirs); a soldier who lost a Nivian in a raid walks to
+## the forest and comes back with another; and a Nivian falling in a raid
+## costs its person a Nivian, not their life.
+func _run_catch_test() -> void:
+	var main := get_tree().current_scene
+	var world: BaseWorld = main.world
+	var forest: Forest = world.forest
+	var edge: float = Config.GRID * 0.5 + 3.0
+	print("[catch] forest centre x=%.1f half=%.1f wild=%d (expect %d)" % [forest.center.x, forest.half, forest.wild_count(), Config.WILD_NIVIANS])
+	print("[catch] land: castle=%s bridge=%s forest=%s sea beside bridge=%s sea past forest=%s (expect T T T F F)" % [
+		forest.on_land(Vector3.ZERO), forest.on_land(Vector3(edge + 6.0, 0, 0)), forest.on_land(forest.center),
+		forest.on_land(Vector3(edge + 6.0, 0, 8.0)), forest.on_land(forest.center + Vector3(forest.half + 3.0, 0, 0))])
+
+	# walking: stick held for a second moves the King and the camera follows
+	main._on_walk(true)
+	var start := world.king_pos
+	world.joystick = Vector2(0.0, -1.0)
+	for i in 60:
+		world._walk(1.0 / 60.0)
+	world.joystick = Vector2.ZERO
+	print("[catch] walked %.2f tiles in 1s (expect ~%.1f), camera on King=%s" % [
+		world.king_pos.distance_to(start), Config.KING_WALK_SPEED, world.rig.position.distance_to(Vector3(world.king_pos.x, 0, world.king_pos.z)) < 0.01])
+	# cannot walk into the castle
+	var mid := Config.GRID / 2
+	world.king_pos = Config.tile_to_world(mid, mid + 3)
+	var castle_tile := Config.tile_to_world(mid, mid + 1)
+	print("[catch] can stand on castle tile=%s, on open grass=%s (expect false / true)" % [world._can_stand(castle_tile), world._can_stand(world.king_pos)])
+
+	# throwing outside the forest: refused with a hint
+	var msgs := []
+	var cb := func(m: String, _ok: bool) -> void: msgs.append(m)
+	world.caught.connect(cb)
+	world.throw_ball()
+	print("[catch] throw from home: '%s'" % (msgs.back() if not msgs.is_empty() else "(nothing)"))
+
+	# stand on top of a wild Nivian and throw until the King has caught two
+	Game.state["credits"] = 0
+	var caught := 0
+	var throws := 0
+	while caught < 2 and throws < 12:
+		var w := forest.nearest_wild(forest.center, 100.0)
+		if w.is_empty():
+			break
+		if w["type"] == "firon":
+			# with no credits Firon refuses; prove that, then stand by another
+			world.king_pos = w["pos"]
+			world.throw_ball()
+			print("[catch] Firon at 0 credits: '%s'" % msgs.back())
+			forest.take(w)
+			continue
+		world.king_pos = w["pos"]
+		throws += 1
+		var before: int = Game.state["king"]["bonded"].size()
+		world.throw_ball()
+		await get_tree().create_timer(0.6).timeout
+		if Game.state["king"]["bonded"].size() > before:
+			caught += 1
+	print("[catch] %d throws at point blank -> King's Nivians=%s (expect 2 within a few throws)" % [throws, Game.state["king"]["bonded"]])
+	print("[catch] wild left=%d, respawn queued=%d (caught ones come back after %ds)" % [forest.wild_count(), forest._respawn.size(), int(Config.WILD_RESPAWN_SECONDS)])
+
+	# fill the King to five, then the next catch must go to a soldier short of one
+	while Game.state["king"]["bonded"].size() < Config.BONDED_FOR_KING:
+		Game.receive_nivian("garuan")
+	Game.state["queues"]["barracks_h"].clear()
+	var soldier := Game.add_unit("knight", 0, ["unitone", "garuan"])
+	print("[catch] King full: catch_error='%s' (expect nobody needs one)" % Game.catch_error("unitone"))
+	soldier["bonded"].erase("garuan")
+	print("[catch] soldier short one: catch_error='%s' -> receiver=%s bonded=%s" % [Game.catch_error("unitone"), Game.receive_nivian("unitone"), soldier["bonded"]])
+
+	# a raid where a Nivian falls: the soldier lives, loses the Nivian, then
+	# walks to the forest and returns with another after CATCH_SECONDS
+	var king_before: int = Game.state["king"]["bonded"].size()
+	var army_before: int = Game.state["army"].size()
+	var outcome := Game.apply_battle_result({"stars": 1, "loot": {"serge": 0.0, "jade": 0.0}, "destruction": 0.5,
+		"fallen": [{"id": soldier["id"], "type": "unitone"}, {"id": -1, "type": "garuan"}],
+		"enemy_name": "Test", "reason": "test", "survivors": 0})
+	print("[catch] after raid: soldiers %d->%d (expect same), soldier bonded=%s, King %d->%d, nivians_lost=%s" % [
+		army_before, Game.state["army"].size(), soldier["bonded"], king_before, Game.state["king"]["bonded"].size(), outcome["nivians_lost"]])
+	Game.advance(1.0)
+	print("[catch] a second later the soldier is '%s' with %.0fs to go (expect catching)" % [soldier["status"], float(soldier.get("catch_remaining", 0.0))])
+	Game.advance(Config.CATCH_SECONDS + 1.0)
+	print("[catch] after the trip: '%s' bonded=%s (expect ready, two Nivians)" % [soldier["status"], soldier["bonded"]])
+	main._on_walk(false)
+	print("[catch] DONE")
 	get_tree().quit()

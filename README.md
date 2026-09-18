@@ -44,6 +44,8 @@ Windows, Linux, macOS and Android are already set up in `export_presets.cfg`.
 | Cancel | `Esc`, or **Cancel** / **Done** |
 | Open the shop | `B` |
 | Collect everything | `C` |
+| Walk as the King | **Walk**, or `K`. `W` `A` `S` `D` / arrows or the on-screen stick move him; the camera follows. `Esc` or **Stop walking** ends it |
+| Throw a Nivian ball | **Throw**, `Space`, or tap the wild Nivian, once you are close to one in the forest |
 
 A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
 trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
@@ -58,6 +60,16 @@ Tap an already-committed troop to select it alone, then **Hold** pauses it
 and **Proceed** resumes it. The King is still deployed like a troop and
 walks wherever you tap, free of the staging area and squad orders.
 
+The forest lies across a plank bridge off the east coast. Wild Nivians
+wander its meadow; a caught one is replaced after a while, so it never runs
+dry. The King bonds no Nivians by decree: walk him over and throw a Nivian
+ball at one from a few steps away. The closer you stand, the better it
+sticks; a miss sends the Nivian bolting. He keeps up to five, and once he is
+full a catch goes to any soldier short of their two. Firon will not bond
+with a ruler under twenty credits. Soldiers make the same trip on their own:
+a Nivian lost in a raid sends its soldier to the forest for a while, and they
+come back with another.
+
 ## What is in the game
 
 Everything the design document lists for Castle Level One, section 5:
@@ -71,6 +83,7 @@ Everything the design document lists for Castle Level One, section 5:
 | **Military stationing** | Guard Stations and Outposts house the army; the Law Enforcer Ground Cavalry Outpost houses cavalry alone. |
 | **The home island** | Ten times the buildable area of the original plot, so a full set of buildings no longer tiles the whole island by Castle Level Two. |
 | **Short-Fire Cannon** | The single Castle One defence: short range, fast rate of fire. |
+| **The forest** | A second island, bridged to the home coast, where wild Nivians roam. The King catches his own in person, on foot with a Nivian ball; soldiers who lose one in a raid go and bond another off-screen. The King's Nivians fight beside him in a raid. |
 | **Population and bonding** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Every citizen bonds one Nivian, rarely two; a soldier bonds exactly two, who fight only when that soldier is sent into battle, never trained or sent in on their own; the King can bond up to five. Up to 15 soldiers total. |
 | **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |
 | **Credits** | Festivals and taxes move happiness and karma. Firon only bonds with a ruler holding twenty credits or more. |
@@ -120,6 +133,7 @@ scripts/art/Palette.gd   One shared colour palette
 scripts/art/Buildings.gd A model for every Castle One building
 scripts/art/Troops.gd    Models for soldiers, creatures and the King
 scripts/world/Island.gd  The island: grass, beach, sea, trees and rocks
+scripts/world/Forest.gd  The forest island, its bridge, and the wild Nivians
 scripts/world/BaseWorld  Your kingdom in 3D: placement, selection, collection
 scripts/world/CameraRig  Isometric camera: pan, zoom, tap
 scripts/world/WorldEnv   Sun, sky and shadow settings shared by both scenes
@@ -161,6 +175,10 @@ godot --path . -- --capture=/tmp/shot.png --after=90 --demo=build
 
 # play a whole raid with no window and print what happened
 godot --headless --path . -- --after=30 --demo=sim
+
+# check the staging area / squad orders, and the forest / catching, headlessly
+godot --headless --path . -- --after=30 --demo=squad
+godot --headless --path . -- --after=30 --demo=catch
 
 # write every sound to /tmp/nivi_audio so it can be listened to
 godot --headless --path . -- --after=30 --demo=audio

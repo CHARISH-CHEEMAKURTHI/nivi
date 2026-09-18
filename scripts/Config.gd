@@ -20,7 +20,7 @@ const BATTLE_TIME := 150.0        ## seconds per raid
 const SEASON_SECONDS := 60.0      ## one season of in-game time (aging tick)
 const OFFLINE_CAP := 7200.0       ## most offline seconds credited on load
 const SAVE_PATH := "user://nivi_save.json"
-const SAVE_VERSION := 3   ## bumped: Builders/Gems removed, army now population-bonded
+const SAVE_VERSION := 4   ## bumped: the forest, wild Nivians and catching
 
 ## Castle Level One's hard cap on standing soldiers, independent of housing:
 ## fifteen is plenty to take any of the three story kingdoms, so that is what
@@ -33,6 +33,19 @@ const BONDED_FOR_KING := 5
 ## A civilian usually bonds one creature; this is how often they bond a
 ## second, rarer one instead.
 const RARE_SECOND_CREATURE_CHANCE := 0.15
+
+## The forest: a second, smaller island off the home island's east coast,
+## joined to it by a bridge. Wild Nivians live there. A soldier who loses a
+## bonded Nivian in a raid walks over on their own and comes back with
+## another after CATCH_SECONDS; the King has to go and catch his in person.
+const FOREST_GRID := 36            ## forest island tiles across
+const FOREST_GAP := 14.0           ## open water between the two islands' grass
+const WILD_NIVIANS := 8            ## how many roam the forest at once
+const WILD_RESPAWN_SECONDS := 18.0 ## a caught one is replaced after this long
+const THROW_RANGE := 4.5           ## how far the King can throw a Nivian ball
+const CATCH_CHANCE := 0.72         ## odds at point-blank; falls off with distance
+const CATCH_SECONDS := 45.0        ## a soldier's trip to re-bond a lost Nivian
+const KING_WALK_SPEED := 5.0       ## tiles per second on foot
 
 const RESOURCES := {
 	"serge": {"name": "Serge", "color": Color("ff9a3c")},
@@ -243,6 +256,11 @@ static func tile_to_world(tx: int, ty: int, grid: int = GRID) -> Vector3:
 ## Turn a world position into the tile it falls on.
 static func world_to_tile(p: Vector3, grid: int = GRID) -> Vector2i:
 	return Vector2i(int(floor(p.x + grid * 0.5)), int(floor(p.z + grid * 0.5)))
+
+## Where the forest island sits: its grass edge FOREST_GAP east of the home
+## island's grass edge, centred on the bridge that joins them along z = 0.
+static func forest_center() -> Vector3:
+	return Vector3(GRID * 0.5 + 3.0 + FOREST_GAP + FOREST_GRID * 0.5 + 3.0, 0.0, 0.0)
 
 ## World position for the centre of a building's footprint.
 static func building_origin(tx: int, ty: int, w: int, h: int, grid: int = GRID) -> Vector3:

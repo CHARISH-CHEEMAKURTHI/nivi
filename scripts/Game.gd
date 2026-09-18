@@ -45,11 +45,12 @@ func new_game() -> void:
 	add_building("home", mid + 2, mid + 6, true)
 	for i in 5:
 		add_citizen(18 + i * 6)
-	# The King starts bonded to two Nivians, and can grow to a maximum of five.
-	state["king"]["bonded"] = ["unitone", "garuan"]
+	# The King bonds no Nivians by decree: he walks over the bridge to the
+	# forest and catches his own, up to five.
 	train("knight")
 	assign_professions()
 	log_line("Welcome, my liege. Your kingdom awaits its first orders.")
+	log_line("Wild Nivians roam the forest across the bridge. Walk there and catch your own.")
 
 func log_line(msg: String) -> void:
 	var entries: Array = state["log"]
@@ -199,15 +200,18 @@ func army_summary() -> Dictionary:
 	var cap := capacities()
 	var ready := 0
 	var injured := 0
+	var catching := 0
 	for u in state["army"]:
 		if u["status"] == "ready":
 			ready += 1
+		elif u["status"] == "catching":
+			catching += 1
 		else:
 			injured += 1
 	return {
 		"housing": housing_used("army"), "housing_cap": cap["housing"],
 		"cavalry": housing_used("cavalry"), "cavalry_cap": cap["housing_cavalry"],
-		"ready": ready, "injured": injured,
+		"ready": ready, "injured": injured, "catching": catching,
 	}
 
 func ready_units() -> Array:
@@ -344,9 +348,8 @@ func train(type: String) -> String:
 	var c := _free_citizen()
 	c["profession"] = "Soldier"
 	var bonded: Array[String] = []
-	var kin: Array = Config.CREATURES.keys()
 	for i in Config.BONDED_PER_SOLDIER:
-		bonded.append(kin[randi() % kin.size()])
+		bonded.append(random_kin())
 	var item := {"type": type, "remaining": float(u["time"]), "citizen_id": c["id"], "bonded": bonded}
 	state["queues"][u["barracks"]].append(item)
 	army_changed.emit()
@@ -365,6 +368,57 @@ func cancel_training(barracks: String, index: int) -> void:
 				c["profession"] = "Citizen"
 	assign_professions()
 	army_changed.emit()
+
+## A Nivian kind a citizen or soldier comes home from the forest with. Firon
+## only answers a well-regarded ruler, so it is left out until the credits
+## are there (the King catching one in person faces the same rule).
+func random_kin() -> String:
+	var kinds: Array = []
+	for id in Config.CREATURES:
+		var need := int(Config.UNITS[id].get("credits_required", 0))
+		if state["credits"] >= need:
+			kinds.append(id)
+	return kinds[randi() % kinds.size()]
+
+func unit_name(u: Dictionary) -> String:
+	for c in state["citizens"]:
+		if c["id"] == int(u.get("citizen_id", 0)):
+			return str(c["name"])
+	return str(Config.UNITS[u["type"]]["name"])
+
+# ---------------------------------------------------------------- the forest
+## Who a Nivian the King catches goes to: himself, up to five, then any
+## soldier short of their two. Returns an error while nobody needs one.
+func catch_error(type: String) -> String:
+	var need := int(Config.UNITS[type].get("credits_required", 0))
+	if state["credits"] < need:
+		return "%s only bonds with a ruler holding %d+ credits." % [Config.UNITS[type]["name"], need]
+	if state["king"]["bonded"].size() < Config.BONDED_FOR_KING:
+		return ""
+	for u in state["army"]:
+		if u["bonded"].size() < Config.BONDED_PER_SOLDIER:
+			return ""
+	return "Nobody needs a Nivian right now: you already command five."
+
+## Hands a caught Nivian to whoever needs it and says who that was.
+func receive_nivian(type: String) -> String:
+	var name: String = Config.UNITS[type]["name"]
+	if state["king"]["bonded"].size() < Config.BONDED_FOR_KING:
+		state["king"]["bonded"].append(type)
+		log_line("You caught a %s. It now follows the King." % name)
+		army_changed.emit()
+		return "The King"
+	for u in state["army"]:
+		if u["bonded"].size() < Config.BONDED_PER_SOLDIER:
+			u["bonded"].append(type)
+			# no need for their own trip to the forest any more
+			if u["status"] == "catching" and u["bonded"].size() >= Config.BONDED_PER_SOLDIER:
+				u["status"] = "ready"
+				u["catch_remaining"] = 0.0
+			log_line("You caught a %s for %s." % [name, unit_name(u)])
+			army_changed.emit()
+			return unit_name(u)
+	return ""
 
 ## Give civilians a job based on the support buildings that exist.
 func assign_professions() -> void:
@@ -448,6 +502,21 @@ func _tick(dt: float) -> void:
 				u["status"] = "ready"
 				u["heal_remaining"] = 0.0
 				army_changed.emit()
+		elif u["status"] == "ready" and u["bonded"].size() < Config.BONDED_PER_SOLDIER:
+			# a soldier short of a Nivian walks over the bridge to catch another
+			u["status"] = "catching"
+			u["catch_remaining"] = Config.CATCH_SECONDS
+			log_line("%s set off for the forest to bond a new Nivian." % unit_name(u))
+			army_changed.emit()
+		elif u["status"] == "catching":
+			u["catch_remaining"] = float(u.get("catch_remaining", 0.0)) - dt
+			if u["catch_remaining"] <= 0.0:
+				u["catch_remaining"] = 0.0
+				while u["bonded"].size() < Config.BONDED_PER_SOLDIER:
+					u["bonded"].append(random_kin())
+				u["status"] = "ready"
+				log_line("%s came back from the forest with a %s." % [unit_name(u), Config.UNITS[u["bonded"].back()]["name"]])
+				army_changed.emit()
 	var king: Dictionary = state["king"]
 	if king["status"] == "injured":
 		king["heal_remaining"] -= dt * cap["heal_speed"]
@@ -510,11 +579,24 @@ func apply_battle_result(result: Dictionary) -> Dictionary:
 
 	var cap := capacities()
 	var base_heal := 45.0 if cap["hospital"] else 150.0
-	var outcome := {"dead": [], "injured": []}
+	var outcome := {"dead": [], "injured": [], "nivians_lost": []}
 	for fallen in result["fallen"]:
-		if fallen["type"] == "king":
+		var ftype := str(fallen["type"])
+		if ftype == "king":
 			state["king"]["status"] = "injured"
 			state["king"]["heal_remaining"] = 60.0
+			continue
+		if Config.UNITS[ftype]["kind"] == "creature":
+			# A bonded Nivian fell: it is gone from whoever it followed, and they
+			# will need another from the forest. The King's are marked -1.
+			if int(fallen["id"]) == -1:
+				state["king"]["bonded"].erase(ftype)
+			else:
+				for u in state["army"]:
+					if u["id"] == int(fallen["id"]):
+						u["bonded"].erase(ftype)
+						break
+			outcome["nivians_lost"].append(ftype)
 			continue
 		var unit := {}
 		for u in state["army"]:

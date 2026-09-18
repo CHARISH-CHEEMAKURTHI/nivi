@@ -20,7 +20,19 @@ const DEADZONE := 6.0            ## screen pixels before a press counts as a dra
 const KEY_ZOOM_RATE := 1.15      ## multiplicative zoom speed per second for Q/E
 const PAN_GESTURE_SCALE := 45.0  ## screen-pixel-equivalent per trackpad pan unit
 
-@export var bounds := 30.0
+## How far the rig may travel. `bounds` sets a square centred on the origin;
+## the min/max pair lets a world extend it one way (the forest lies east of
+## the home island, so the home rig can look past its own coast to reach it).
+var bounds_min := Vector2(-30, -30)
+var bounds_max := Vector2(30, 30)
+@export var bounds := 30.0:
+	set(v):
+		bounds = v
+		bounds_min = Vector2(-v, -v)
+		bounds_max = Vector2(v, v)
+
+## Off while the King is being walked by hand, since WASD steers him then.
+var keys_enabled := true
 
 var camera: Camera3D
 var _zoom := 40.0
@@ -240,16 +252,17 @@ func _pan_by_screen(delta: Vector2) -> void:
 	_clamp()
 
 func _clamp() -> void:
-	position.x = clampf(position.x, -bounds, bounds)
-	position.z = clampf(position.z, -bounds, bounds)
+	position.x = clampf(position.x, bounds_min.x, bounds_max.x)
+	position.z = clampf(position.z, bounds_min.y, bounds_max.y)
 	position.y = 0.0
 
 func _process(delta: float) -> void:
 	var move := Vector2.ZERO
-	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): move.y -= 1
-	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN): move.y += 1
-	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): move.x -= 1
-	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): move.x += 1
+	if keys_enabled:
+		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): move.y -= 1
+		if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN): move.y += 1
+		if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): move.x -= 1
+		if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): move.x += 1
 	if move != Vector2.ZERO and not blocked:
 		_pan_by_screen(-move.normalized() * 620.0 * delta)
 	# Q zooms in, E zooms out: a steady multiplicative rate so it feels the

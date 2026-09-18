@@ -13,9 +13,21 @@ extends Node3D
 signal building_tapped(building: Dictionary)
 signal ground_tapped(tile: Vector2i)
 signal placement_changed(valid: bool)
+signal caught(message: String, ok: bool)
 
 var island: Island
+var forest: Forest
 var rig: CameraRig
+
+# the King on foot: WASD / arrows or the on-screen stick steer him, the
+# camera follows, and he can roam anywhere on land -- home island, bridge,
+# forest -- but not through buildings
+var walk_mode := false
+var joystick := Vector2.ZERO          ## set by the HUD's virtual stick
+var king_pos := Vector3.ZERO
+var _king: Node3D
+var _king_facing := 0.0
+var _ball: Node3D = null
 
 var _models: Dictionary = {}          ## building id -> Node3D
 var _ghost: Node3D = null
@@ -39,9 +51,18 @@ func _ready() -> void:
 	island = Island.new()
 	island.grid_size = Config.GRID
 	add_child(island)
+	forest = Forest.new()
+	add_child(forest)
 	rig = CameraRig.new()
 	rig.bounds = Config.GRID * 0.5 + 2.0
+	# the camera may travel east as far as the forest
+	rig.bounds_max.x = forest.center.x + forest.half
 	add_child(rig)
+	_king = MeshBuilder.instance(Troops.build("king"))
+	add_child(_king)
+	var mid := Config.GRID / 2
+	king_pos = Config.tile_to_world(mid, mid + 3)
+	_king.position = king_pos
 	rig.tapped.connect(_on_tapped)
 	rig.pressed.connect(_on_pressed)
 	rig.drag_moved.connect(_on_drag_moved)
@@ -104,7 +125,9 @@ func _tag_height(type: String) -> float:
 		"wall", "road": return 1.2
 		_: return 1.7
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if walk_mode:
+		_walk(delta)
 	# keep the floating tags current: a coin when a mine is worth collecting,
 	# a countdown while a building is going up
 	for b in Game.buildings():
@@ -129,6 +152,113 @@ func _process(_delta: float) -> void:
 				tag.position.y = _tag_height(b["type"]) + sin(Time.get_ticks_msec() * 0.004) * 0.12
 			else:
 				tag.visible = false
+
+# ---------------------------------------------------------------- the King on foot
+func set_walk_mode(on: bool) -> void:
+	walk_mode = on
+	joystick = Vector2.ZERO
+	rig.keys_enabled = not on
+	if on:
+		clear_selection()
+		rig.focus_on(king_pos, false)
+		if rig.get_zoom() > 30.0:
+			rig.set_zoom(22.0)
+
+func _walk(delta: float) -> void:
+	var move := joystick
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): move.y -= 1
+	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN): move.y += 1
+	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): move.x -= 1
+	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): move.x += 1
+	if move.length() > 1.0:
+		move = move.normalized()
+	if move.length_squared() > 1e-4:
+		# screen-relative: "up" on the stick walks away from the camera
+		var fwd := -rig.global_transform.basis.z
+		fwd.y = 0.0
+		fwd = fwd.normalized()
+		var right := rig.global_transform.basis.x
+		right.y = 0.0
+		right = right.normalized()
+		var dir := (right * move.x - fwd * move.y).normalized()
+		var step := dir * Config.KING_WALK_SPEED * delta
+		var next := king_pos + step
+		if _can_stand(next):
+			king_pos = next
+		elif _can_stand(Vector3(next.x, 0, king_pos.z)):
+			king_pos.x = next.x
+		elif _can_stand(Vector3(king_pos.x, 0, next.z)):
+			king_pos.z = next.z
+		_king_facing = atan2(-dir.x, -dir.z)
+		_king.position = king_pos + Vector3(0, absf(sin(Time.get_ticks_msec() * 0.014)) * 0.07, 0)
+	else:
+		_king.position = king_pos
+	_king.rotation.y = _king_facing
+	rig.focus_on(king_pos)
+
+## Land only, and never through a building (roads are fine to walk on).
+func _can_stand(p: Vector3) -> bool:
+	if not forest.on_land(p):
+		return false
+	var tile := Config.world_to_tile(p)
+	var b := Game.building_at(tile.x, tile.y)
+	if b.is_empty():
+		return true
+	return Config.BUILDINGS[b["type"]].get("flat", false)
+
+func king_in_forest() -> bool:
+	return forest.in_forest(king_pos)
+
+## The Nivian ball: thrown at the nearest wild Nivian in reach. Whether it
+## sticks depends on distance, and whether anyone can take the Nivian home
+## is Game's call (the King fills his five first, then soldiers short of
+## theirs).
+func throw_ball() -> void:
+	if not walk_mode or _ball != null:
+		return
+	var w := forest.nearest_wild(king_pos, Config.THROW_RANGE)
+	if w.is_empty():
+		Sfx.play("error")
+		caught.emit("No wild Nivian in reach. Walk closer in the forest." if king_in_forest() else "The wild Nivians live in the forest, over the bridge to the east.", false)
+		return
+	var err := Game.catch_error(str(w["type"]))
+	if err != "":
+		Sfx.play("error")
+		caught.emit(err, false)
+		return
+	var target: Vector3 = w["pos"]
+	var dist: float = Vector2(target.x, target.z).distance_to(Vector2(king_pos.x, king_pos.z))
+	_king_facing = atan2(-(target.x - king_pos.x), -(target.z - king_pos.z))
+	var mb := MeshBuilder.new()
+	mb.sphere(Vector3.ZERO, 0.17, Color("f4f4f0"), 8, 6)
+	mb.box(Vector3(-0.19, -0.02, -0.19), Vector3(0.38, 0.04, 0.38), Color("d8452f"))
+	_ball = MeshBuilder.instance(mb.commit())
+	_ball.position = king_pos + Vector3(0, 0.8, 0)
+	add_child(_ball)
+	Sfx.play("deploy")
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_ball, "position:x", target.x, 0.45)
+	tw.tween_property(_ball, "position:z", target.z, 0.45)
+	tw.tween_property(_ball, "position:y", 1.6, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_property(_ball, "position:y", 0.3, 0.23).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(func() -> void: _ball_landed(w, dist))
+
+func _ball_landed(w: Dictionary, dist: float) -> void:
+	if _ball != null:
+		_ball.queue_free()
+		_ball = null
+	var chance := Config.CATCH_CHANCE - clampf(dist / Config.THROW_RANGE, 0.0, 1.0) * 0.35
+	var type := str(w["type"])
+	if randf() < chance:
+		forest.take(w)
+		var who := Game.receive_nivian(type)
+		Sfx.play("done")
+		caught.emit("Caught a %s! It bonds with %s." % [Config.UNITS[type]["name"], who], true)
+	else:
+		forest.scare(w, king_pos)
+		Sfx.play("error")
+		caught.emit("The %s slipped out and bolted. Get closer and try again." % Config.UNITS[type]["name"], false)
 
 static func _format_time(seconds: float) -> String:
 	var s := int(ceil(maxf(seconds, 0.0)))
@@ -282,6 +412,10 @@ func cancel_placing() -> void:
 func _on_tapped(screen_pos: Vector2) -> void:
 	# line mode places on press, not on tap-release; see _on_pressed
 	if _line_mode:
+		return
+	if walk_mode:
+		# a tap while walking throws at whatever is in reach
+		throw_ball()
 		return
 	var world := rig.screen_to_ground(screen_pos)
 	var tile := Config.world_to_tile(world)

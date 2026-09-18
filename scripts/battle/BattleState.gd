@@ -22,6 +22,7 @@ var end_reason := ""
 var available: Array = []           ## roster entries not yet deployed
 var king_available := false
 var king_deployed := false
+var king_bonded: Array = []     ## the King's own Nivians; they land beside him
 var selected_id := 0            ## a single already-committed unit, tapped for Hold/Proceed micromanagement
 var selected_ids: Array = []    ## soldiers picked in the staging area, pending a squad command
 
@@ -32,10 +33,11 @@ var _next_id := 1
 var _empty_timer := 0.0
 var _astar := AStarGrid2D.new()
 
-func _init(kingdom_data: Dictionary, roster: Array, king_ready: bool) -> void:
+func _init(kingdom_data: Dictionary, roster: Array, king_ready: bool, king_creatures: Array = []) -> void:
 	kingdom = kingdom_data
 	time_left = Config.BATTLE_TIME
 	king_available = king_ready
+	king_bonded = king_creatures.duplicate()
 	for u in roster:
 		available.append({"id": u["id"], "type": u["type"], "bonded": u.get("bonded", [])})
 	_loot_total = kingdom["loot"].duplicate()
@@ -216,7 +218,10 @@ func deploy(type: String, tile := Vector2i(-1, -1)) -> String:
 		if not can_deploy_at(tile):
 			return "Drop him clear of enemy buildings."
 		king_deployed = true
-		_spawn_unit("king", tile, 0)
+		var king_id := _spawn_unit("king", tile, 0)
+		# roster id -1 marks a Nivian as the King's own when it falls
+		for creature_type in king_bonded:
+			_spawn_unit(str(creature_type), tile, -1, king_id)
 		started = true
 		return ""
 	var idx := -1

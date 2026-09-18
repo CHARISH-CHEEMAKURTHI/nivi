@@ -9,6 +9,9 @@ signal request_attack(kingdom_id: String)
 signal request_place_confirm
 signal request_place_cancel
 signal request_new_game
+signal request_walk(on: bool)
+signal request_throw
+signal walk_input(vector: Vector2)
 
 var world: BaseWorld
 
@@ -31,6 +34,10 @@ var _toast_timer := 0.0
 var _modal: Control
 var _modal_body: VBoxContainer
 var _refresh_timer := 0.0
+var _bottom_bar: HBoxContainer
+var _walk_bar: PanelContainer
+var _walk_hint: Label
+var _joystick: Joystick
 
 const GEM_SIZE := 30
 
@@ -45,6 +52,7 @@ func _ready() -> void:
 	_build_bottom(root)
 	_build_panel(root)
 	_build_place_bar(root)
+	_build_walk_bar(root)
 	_build_toast(root)
 	_build_modal(root)
 	Game.resources_changed.connect(refresh_top)
@@ -184,7 +192,7 @@ func _build_top(root: Control) -> void:
 	stats.position = Vector2(0, 14)
 	stats.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	root.add_child(stats)
-	for entry in [["pop", "Pop"], ["joy", "Joy"], ["credits", "Credits"], ["army", "Army"], ["season", "Season"]]:
+	for entry in [["pop", "Pop"], ["joy", "Joy"], ["credits", "Credits"], ["army", "Army"], ["nivians", "King's Nivians"], ["season", "Season"]]:
 		var plaque2 := PanelContainer.new()
 		plaque2.theme_type_variation = "Plaque"
 		var row2 := HBoxContainer.new()
@@ -212,6 +220,7 @@ func refresh_top() -> void:
 	var credits: int = Game.state["credits"]
 	_stat_label["credits"].text = ("+%d" % credits) if credits > 0 else str(credits)
 	_stat_label["army"].text = "%d/%d" % [army["housing"], army["housing_cap"]]
+	_stat_label["nivians"].text = "%d/%d" % [Game.state["king"]["bonded"].size(), Config.BONDED_FOR_KING]
 	_stat_label["season"].text = str(Game.state["season"])
 
 # ---------------------------------------------------------------- bottom bar
@@ -224,12 +233,14 @@ func _build_bottom(root: Control) -> void:
 	bar.offset_bottom = -14
 	bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 	root.add_child(bar)
+	_bottom_bar = bar
 
 	var left := HBoxContainer.new()
 	left.add_theme_constant_override("separation", 8)
 	left.add_child(_button("Build", "GreenButton", func() -> void: show_build("resource")))
 	left.add_child(_button("Army", "", func() -> void: show_army()))
 	left.add_child(_button("Kingdom", "GoldButton", func() -> void: show_kingdom()))
+	left.add_child(_button("Walk", "", func() -> void: request_walk.emit(true)))
 	bar.add_child(left)
 
 	var spacer := Control.new()
@@ -550,10 +561,11 @@ func show_army() -> void:
 	roster.add_theme_constant_override("h_separation", 6)
 	roster.add_theme_constant_override("v_separation", 6)
 	_panel_body.add_child(roster)
-	roster.add_child(_roster_chip("king", "The King", Game.state["king"]["status"], Game.state["king"]["heal_remaining"]))
+	roster.add_child(_roster_chip("king", "The King", Game.state["king"]["status"], Game.state["king"]["heal_remaining"], Game.state["king"]["bonded"]))
 	for u in Game.state["army"]:
-		roster.add_child(_roster_chip(u["type"], Config.UNITS[u["type"]]["name"], u["status"], u["heal_remaining"]))
-	var note2 := _label("Soldiers bond with up to two creatures. Those who fall in a raid may be lost for good; the injured heal faster with a Hospital.", "MutedLabel")
+		var remaining: float = u["heal_remaining"] if u["status"] == "injured" else float(u.get("catch_remaining", 0.0))
+		roster.add_child(_roster_chip(u["type"], Game.unit_name(u), u["status"], remaining, u["bonded"]))
+	var note2 := _label("Every soldier bonds two Nivians, the King up to five. A Nivian lost in a raid sends its soldier to the forest for a while to bond another; the King catches his own there. Soldiers who fall may be lost for good; the injured heal faster with a Hospital.", "MutedLabel")
 	note2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_panel_body.add_child(note2)
 
@@ -593,7 +605,7 @@ func _unit_card(type: String) -> Control:
 	card.add_child(col)
 	return card
 
-func _roster_chip(type: String, name: String, status: String, heal: float) -> Control:
+func _roster_chip(type: String, name: String, status: String, heal: float, bonded: Array = []) -> Control:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "Card"
 	var col := VBoxContainer.new()
@@ -603,12 +615,27 @@ func _roster_chip(type: String, name: String, status: String, heal: float) -> Co
 	n.add_theme_font_size_override("font_size", 14)
 	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(n)
-	var s := _label("ready" if status == "ready" else BaseWorld._format_time(heal / Game.capacities()["heal_speed"]), "MutedLabel")
+	var status_text := "ready"
+	if status == "injured":
+		status_text = BaseWorld._format_time(heal / Game.capacities()["heal_speed"])
+	elif status == "catching":
+		status_text = "in the forest %s" % BaseWorld._format_time(heal)
+	var s := _label(status_text, "MutedLabel")
 	s.add_theme_font_size_override("font_size", 13)
 	s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(s)
-	if status != "ready":
+	var names := []
+	for kind in bonded:
+		names.append(Config.UNITS[kind]["name"])
+	var bl := _label(", ".join(names) if not names.is_empty() else "no Nivian", "MutedLabel")
+	bl.add_theme_font_size_override("font_size", 12)
+	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(bl)
+	if status == "injured":
 		card.modulate = Color(1, 0.8, 0.8, 0.85)
+	elif status == "catching":
+		card.modulate = Color(0.85, 1, 0.85, 0.9)
 	card.add_child(col)
 	return card
 
@@ -663,7 +690,7 @@ func show_kingdom() -> void:
 	for id in Config.CREATURES:
 		var cr: Dictionary = Config.CREATURES[id]
 		var t: Dictionary = Config.TYPE_RATIOS[cr["type"]]
-		_row(_panel_body, "%s (%s)" % [cr["name"], cr["base"]],
+		_row(_panel_body, "%s (%s)" % [cr["name"], cr["kin"]],
 			"STR %d  MAG %d  DEF %d" % [int(t["strength"]), int(t["magic"]), int(t["defense"])])
 
 	_heading(_panel_body, "Raids")
@@ -717,6 +744,73 @@ func hide_place_bar() -> void:
 func set_place_valid(ok: bool) -> void:
 	_place_label.modulate = Color.WHITE if ok else UiTheme.RED[1]
 
+# ---------------------------------------------------------------- walking as the King
+## An on-screen stick for phones and tablets: drag inside the ring, the King
+## walks that way. Keyboard players just use WASD. Draws itself, so it needs
+## no textures.
+class Joystick extends Control:
+	signal moved(vector: Vector2)
+	const RADIUS := 64.0
+	var _vec := Vector2.ZERO
+	var _down := false
+	func _init() -> void:
+		custom_minimum_size = Vector2(RADIUS * 2, RADIUS * 2)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+	func _draw() -> void:
+		var c := Vector2(RADIUS, RADIUS)
+		draw_circle(c, RADIUS, Color(0.12, 0.08, 0.05, 0.55))
+		draw_arc(c, RADIUS - 2.0, 0.0, TAU, 40, Color("e0bd82"), 3.0, true)
+		draw_circle(c + _vec * (RADIUS - 22.0), 22.0, Color("e0bd82") if _down else Color(0.88, 0.74, 0.5, 0.8))
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			_down = event.is_pressed()
+			_apply_stick(event.position if _down else Vector2(RADIUS, RADIUS))
+			accept_event()
+		elif (event is InputEventScreenDrag or event is InputEventMouseMotion) and _down:
+			_apply_stick(event.position)
+			accept_event()
+	func _apply_stick(pos: Vector2) -> void:
+		var v := (pos - Vector2(RADIUS, RADIUS)) / (RADIUS - 22.0)
+		if v.length() > 1.0:
+			v = v.normalized()
+		if v.length() < 0.12:
+			v = Vector2.ZERO
+		_vec = v
+		queue_redraw()
+		moved.emit(v)
+
+func _build_walk_bar(root: Control) -> void:
+	_walk_bar = PanelContainer.new()
+	_walk_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_walk_bar.position = Vector2(0, -14)
+	_walk_bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_walk_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_walk_bar.visible = false
+	root.add_child(_walk_bar)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	_walk_hint = _label("")
+	row.add_child(_walk_hint)
+	row.add_child(_button("Throw", "GoldButton", func() -> void: request_throw.emit()))
+	row.add_child(_button("Stop walking", "RedButton", func() -> void: request_walk.emit(false)))
+	_walk_bar.add_child(row)
+
+	_joystick = Joystick.new()
+	_joystick.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_joystick.position = Vector2(26, -Joystick.RADIUS * 2 - 26)
+	_joystick.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_joystick.visible = false
+	_joystick.moved.connect(func(v: Vector2) -> void: walk_input.emit(v))
+	root.add_child(_joystick)
+
+func show_walk_bar(on: bool) -> void:
+	_walk_bar.visible = on
+	_joystick.visible = on
+	_bottom_bar.visible = not on
+	if on:
+		Sfx.play("open")
+		_walk_hint.text = "Walking as the King: WASD, arrows or the stick. Cross the bridge east to the forest."
+
 # ---------------------------------------------------------------- toast
 func _build_toast(root: Control) -> void:
 	_toast = PanelContainer.new()
@@ -744,6 +838,9 @@ func _process(delta: float) -> void:
 	if _refresh_timer >= 0.5:
 		_refresh_timer = 0.0
 		refresh_top()
+		if _walk_bar.visible and world != null:
+			_walk_hint.text = ("In the forest. Get within a few steps of a wild Nivian and Throw (Space), or tap it." if world.king_in_forest()
+				else "Walking as the King: WASD, arrows or the stick. Cross the bridge east to the forest.")
 		if _panel.visible and _panel_kind == "info":
 			var b := Game.find_building(int(_panel_arg))
 			if b.is_empty():
@@ -878,8 +975,10 @@ func show_help() -> void:
 		"Build, pick a building, drag it where you want it and press Place.",
 		"Walls and roads work differently: press down and drag across the ground in any direction to lay a whole run, the way Clash of Clans does. Press Done when you are finished, no need to confirm each tile.",
 		"Homes raise the population. Every citizen bonds one Nivian, rarely two; the King can bond up to five.",
+		"Press Walk (or K) to take the King on foot: WASD, the arrows or the on-screen stick move him and the camera follows. Cross the bridge east to the forest, get close to a wild Nivian and press Throw (Space) or tap it to throw a Nivian ball. The closer you are, the better it sticks.",
+		"A soldier who loses a Nivian in a raid walks to the forest on their own and comes back with another; the King's you catch yourself.",
 		"Barracks H enlists citizens as soldiers. Each soldier automatically bonds two Nivians, who fight only when that soldier is sent into battle. Up to 15 soldiers, housed by Guard Stations, Outposts and the Cavalry Outpost.",
-		"Attack picks a target. Choose a troop, tap open ground to drop it, tap a troop to select it and a building to focus it.",
+		"Attack picks a target. Deploy soldiers to the staging area, pick how many of each join the next order, then tap a building to send that squad, Nivians and all. Nobody attacks until told.",
 		"Stars come from 50% destruction, the enemy Castle, and a clean sweep.",
 		"Soldiers who fall may be lost for good. The rest heal, faster once you have a Hospital.",
 	]:
@@ -903,8 +1002,16 @@ func show_results(result: Dictionary, outcome: Dictionary, on_close: Callable) -
 	var hurt := []
 	for u in outcome["injured"]:
 		hurt.append(Config.UNITS[u["type"]]["name"])
+	var lost_n := []
+	for kind in outcome.get("nivians_lost", []):
+		lost_n.append(Config.UNITS[kind]["name"])
 	_row(body, "Lost for good", ", ".join(dead) if not dead.is_empty() else "none")
 	_row(body, "Injured", ", ".join(hurt) if not hurt.is_empty() else "none")
+	_row(body, "Nivians lost", ", ".join(lost_n) if not lost_n.is_empty() else "none")
+	if not lost_n.is_empty():
+		var fl := _label("Soldiers who lost a Nivian will walk to the forest for another. The King's must be caught by hand.", "MutedLabel")
+		fl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.add_child(fl)
 	body.add_child(_button("Return home", "GreenButton", func() -> void:
 		close_modal()
 		on_close.call()))
