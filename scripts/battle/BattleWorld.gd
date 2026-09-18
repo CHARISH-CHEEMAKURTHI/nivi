@@ -6,10 +6,18 @@ extends Node3D
 signal tapped_building(building: Dictionary)
 signal tapped_ground(tile: Vector2i)
 signal tapped_unit(unit: Dictionary)
+signal first_person_ended
 
 var state: BattleState
 var rig: CameraRig
 var deploy_type := ""
+
+# the King seen first person: WASD / the stick walk him, he strikes whatever
+# comes within reach, and the view rides at his eyes
+var first_person := false
+var joystick := Vector2.ZERO
+var _fp: FirstPersonCam
+var _king_id := 0
 
 var _building_nodes: Dictionary = {}
 var _unit_nodes: Dictionary = {}
@@ -31,6 +39,8 @@ func setup(battle: BattleState) -> void:
 	add_child(rig)
 	rig.tapped.connect(_on_tapped)
 	rig.set_zoom(46.0)
+	_fp = FirstPersonCam.new()
+	add_child(_fp)
 
 	for b in state.buildings:
 		var d: Dictionary = Config.BUILDINGS[b["type"]]
@@ -75,9 +85,68 @@ func _ring(col: Color) -> MeshInstance3D:
 static func tile_to_world(p: Vector2) -> Vector3:
 	return Vector3(p.x - Config.BATTLE_GRID * 0.5, 0.0, p.y - Config.BATTLE_GRID * 0.5)
 
+func king_unit() -> Dictionary:
+	for u in state.units:
+		if u["type"] == "king":
+			return u
+	return {}
+
+## Only once the King stands on the field. Hands him to manual control while
+## it lasts; the isometric rig keeps its place for when you switch back.
+func set_first_person(on: bool) -> String:
+	var k := king_unit()
+	if on and (k.is_empty() or k["dead"]):
+		return "Deploy the King first: first person sees through his eyes."
+	first_person = on
+	joystick = Vector2.ZERO
+	rig.blocked = on
+	rig.keys_enabled = not on
+	if on:
+		_king_id = int(k["id"])
+		state.set_manual(_king_id, true)
+		state.selected_id = 0
+		_fp.enable(true, float(k["facing"]))
+		_fp.update_pose(tile_to_world(k["pos"]), false)
+	else:
+		if not k.is_empty():
+			state.set_manual(_king_id, false)
+		_fp.enable(false)
+		rig.camera.make_current()
+		if not k.is_empty():
+			rig.focus_on(tile_to_world(k["pos"]), false)
+	if _unit_nodes.has(_king_id):
+		(_unit_nodes[_king_id] as Node3D).visible = not on
+	return ""
+
+func _walk_king(delta: float) -> void:
+	var k := state.find_unit(_king_id)
+	if k.is_empty() or k["dead"]:
+		set_first_person(false)
+		first_person_ended.emit()
+		return
+	# the player keeps him even if a blanket Hold/Proceed went out
+	k["directive"] = "manual"
+	var move := joystick
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): move.y -= 1
+	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN): move.y += 1
+	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): move.x -= 1
+	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): move.x += 1
+	if move.length() > 1.0:
+		move = move.normalized()
+	if move.length_squared() > 1e-4:
+		var fwd := _fp.forward()
+		var right := _fp.right()
+		var dir := (right * move.x - fwd * move.y).normalized()
+		var speed := float(Config.UNITS["king"]["speed"]) * 1.3
+		state.move_manual(_king_id, Vector2(dir.x, dir.z) * speed * delta)
+	k["facing"] = _fp.yaw
+	_fp.update_pose(tile_to_world(k["pos"]), false)
+
 func _process(delta: float) -> void:
 	if state == null or state.ended:
 		return
+	if first_person:
+		_walk_king(delta)
 	state.update(delta)
 	_sync_units()
 	_sync_shots()
@@ -99,6 +168,8 @@ func _sync_units() -> void:
 		var n: Node3D = _unit_nodes[id]
 		n.position = tile_to_world(u["pos"])
 		n.rotation.y = u["facing"]
+		if first_person and id == _king_id:
+			n.visible = false
 		# a small bob while walking so they do not look like they are gliding
 		if not u["attacking"]:
 			n.position.y = absf(sin(Time.get_ticks_msec() * 0.011 + id)) * 0.055
@@ -217,7 +288,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	_deploy_hint.material_override.albedo_color = Color(0.5, 1, 0.6, 0.6) if ok else Color(1, 0.35, 0.35, 0.6)
 
 func _on_tapped(screen_pos: Vector2) -> void:
-	if state == null or state.ended:
+	if state == null or state.ended or first_person:
 		return
 	var world := rig.screen_to_ground(screen_pos)
 	var tile := Config.world_to_tile(world, Config.BATTLE_GRID)

@@ -11,6 +11,8 @@ signal request_place_cancel
 signal request_new_game
 signal request_walk(on: bool)
 signal request_throw
+signal request_first_person(on: bool)
+signal request_mount
 signal walk_input(vector: Vector2)
 
 var world: BaseWorld
@@ -38,6 +40,8 @@ var _bottom_bar: HBoxContainer
 var _walk_bar: PanelContainer
 var _walk_hint: Label
 var _joystick: Joystick
+var _btn_view: Button
+var _btn_ride: Button
 
 const GEM_SIZE := 30
 
@@ -792,6 +796,10 @@ func _build_walk_bar(root: Control) -> void:
 	_walk_hint = _label("")
 	row.add_child(_walk_hint)
 	row.add_child(_button("Throw", "GoldButton", func() -> void: request_throw.emit()))
+	_btn_ride = _button("Ride", "", func() -> void: request_mount.emit())
+	row.add_child(_btn_ride)
+	_btn_view = _button("First person", "GreenButton", func() -> void: request_first_person.emit(world == null or not world.first_person))
+	row.add_child(_btn_view)
 	row.add_child(_button("Stop walking", "RedButton", func() -> void: request_walk.emit(false)))
 	_walk_bar.add_child(row)
 
@@ -810,6 +818,21 @@ func show_walk_bar(on: bool) -> void:
 	if on:
 		Sfx.play("open")
 		_walk_hint.text = "Walking as the King: WASD, arrows or the stick. Cross the bridge east to the forest."
+	refresh_walk_bar()
+
+## Keeps the view toggle and the Ride label honest with what the world says.
+func refresh_walk_bar() -> void:
+	if world == null:
+		return
+	_btn_view.text = "Isometric view" if world.first_person else "First person"
+	var bonded: Array = Game.state["king"]["bonded"]
+	_btn_ride.disabled = bonded.is_empty()
+	if world.mount != "":
+		_btn_ride.text = "Riding %s" % Config.UNITS[world.mount]["name"]
+	elif bonded.is_empty():
+		_btn_ride.text = "Ride (no Nivian yet)"
+	else:
+		_btn_ride.text = "Ride"
 
 # ---------------------------------------------------------------- toast
 func _build_toast(root: Control) -> void:
@@ -839,8 +862,12 @@ func _process(delta: float) -> void:
 		_refresh_timer = 0.0
 		refresh_top()
 		if _walk_bar.visible and world != null:
-			_walk_hint.text = ("In the forest. Get within a few steps of a wild Nivian and Throw (Space), or tap it." if world.king_in_forest()
-				else "Walking as the King: WASD, arrows or the stick. Cross the bridge east to the forest.")
+			if world.king_in_forest():
+				_walk_hint.text = "In the forest. Get within a few steps of a wild Nivian and Throw (Space), or tap it."
+			elif world.first_person:
+				_walk_hint.text = "Through the King's eyes: drag to look around, Q/E turn, WASD walks the way you face."
+			else:
+				_walk_hint.text = "Walking as the King: WASD, arrows or the stick. Cross the bridge east to the forest."
 		if _panel.visible and _panel_kind == "info":
 			var b := Game.find_building(int(_panel_arg))
 			if b.is_empty():
@@ -976,6 +1003,8 @@ func show_help() -> void:
 		"Walls and roads work differently: press down and drag across the ground in any direction to lay a whole run, the way Clash of Clans does. Press Done when you are finished, no need to confirm each tile.",
 		"Homes raise the population. Every citizen bonds one Nivian, rarely two; the King can bond up to five.",
 		"Press Walk (or K) to take the King on foot: WASD, the arrows or the on-screen stick move him and the camera follows. Cross the bridge east to the forest, get close to a wild Nivian and press Throw (Space) or tap it to throw a Nivian ball. The closer you are, the better it sticks.",
+		"First person (or V) puts you behind the King's eyes: drag or Q/E to look around, WASD to walk the way you face. Ride climbs onto one of his Nivians for a faster trip; a Unitone is quickest. It works in raids too, once the King is deployed.",
+		"Townsfolk and their Nivians walk the roads you lay and never leave them; with no roads they gather in the square before the Castle. Only the King goes wherever he pleases.",
 		"A soldier who loses a Nivian in a raid walks to the forest on their own and comes back with another; the King's you catch yourself.",
 		"Barracks H enlists citizens as soldiers. Each soldier automatically bonds two Nivians, who fight only when that soldier is sent into battle. Up to 15 soldiers, housed by Guard Stations, Outposts and the Cavalry Outpost.",
 		"Attack picks a target. Deploy soldiers to the staging area, pick how many of each join the next order, then tap a building to send that squad, Nivians and all. Nobody attacks until told.",

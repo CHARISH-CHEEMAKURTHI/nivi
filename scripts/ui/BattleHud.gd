@@ -9,6 +9,8 @@ signal order_hold
 signal order_proceed
 signal order_deselect
 signal end_battle
+signal request_first_person(on: bool)
+signal walk_input(vector: Vector2)
 
 var state: BattleState
 var _time: Label
@@ -23,6 +25,9 @@ var _troop_row: HBoxContainer
 var _troop_key := ""
 var _staging_row: HBoxContainer
 var _staging_key := ""
+var _btn_view: Button
+var _joystick: Hud.Joystick
+var _world: BattleWorld
 
 func _ready() -> void:
 	layer = 10
@@ -79,7 +84,18 @@ func _ready() -> void:
 	orow.add_child(_order_button("Hold", "GoldButton", func() -> void: order_hold.emit()))
 	orow.add_child(_order_button("Proceed", "GreenButton", func() -> void: order_proceed.emit()))
 	orow.add_child(_order_button("Deselect", "WoodButton", func() -> void: order_deselect.emit()))
+	_btn_view = _order_button("First person", "GreenButton", func() -> void:
+		request_first_person.emit(_world == null or not _world.first_person))
+	orow.add_child(_btn_view)
 	orders.add_child(orow)
+
+	_joystick = Hud.Joystick.new()
+	_joystick.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_joystick.position = Vector2(26, -Hud.Joystick.RADIUS * 2 - 26)
+	_joystick.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_joystick.visible = false
+	_joystick.moved.connect(func(v: Vector2) -> void: walk_input.emit(v))
+	root.add_child(_joystick)
 
 	_staging_row = HBoxContainer.new()
 	_staging_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -149,9 +165,16 @@ func _plaque(parent: Control, caption: String, value: String) -> Label:
 	parent.add_child(p)
 	return val
 
+func set_world(w: BattleWorld) -> void:
+	_world = w
+
 func refresh(deploy_type: String) -> void:
 	if state == null:
 		return
+	var fp := _world != null and _world.first_person
+	_btn_view.text = "Isometric view" if fp else "First person"
+	_btn_view.disabled = not state.king_deployed
+	_joystick.visible = fp
 	_time.text = BaseWorld._format_time(state.time_left)
 	_destroyed.text = "%d%%" % int(round(state.destruction() * 100.0))
 	_set_stars(state.stars())
@@ -166,7 +189,9 @@ func refresh(deploy_type: String) -> void:
 		_selected.text = "All troops"
 	else:
 		_selected.text = "%s  %d HP" % [Config.UNITS[sel["type"]]["name"], int(ceil(sel["hp"]))]
-	if not state.started:
+	if fp:
+		_hint.text = "Through the King's eyes: WASD or the stick walk him, drag or Q/E look around. He strikes whatever is in reach."
+	elif not state.started:
 		_hint.text = "Pick a troop below to send them to the staging area."
 	elif squad_n > 0:
 		_hint.text = "Tap a building to send this squad at it."

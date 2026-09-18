@@ -23,11 +23,16 @@ var rig: CameraRig
 # camera follows, and he can roam anywhere on land -- home island, bridge,
 # forest -- but not through buildings
 var walk_mode := false
+var first_person := false             ## seen through the King's eyes; implies walk_mode
 var joystick := Vector2.ZERO          ## set by the HUD's virtual stick
 var king_pos := Vector3.ZERO
+var mount := ""                       ## one of the King's bonded Nivians he is riding, or ""
+var townsfolk: Townsfolk
 var _king: Node3D
+var _mount_node: Node3D = null
 var _king_facing := 0.0
 var _ball: Node3D = null
+var _fp: FirstPersonCam
 
 var _models: Dictionary = {}          ## building id -> Node3D
 var _ghost: Node3D = null
@@ -63,6 +68,10 @@ func _ready() -> void:
 	var mid := Config.GRID / 2
 	king_pos = Config.tile_to_world(mid, mid + 3)
 	_king.position = king_pos
+	_fp = FirstPersonCam.new()
+	add_child(_fp)
+	townsfolk = Townsfolk.new()
+	add_child(townsfolk)
 	rig.tapped.connect(_on_tapped)
 	rig.pressed.connect(_on_pressed)
 	rig.drag_moved.connect(_on_drag_moved)
@@ -163,6 +172,61 @@ func set_walk_mode(on: bool) -> void:
 		rig.focus_on(king_pos, false)
 		if rig.get_zoom() > 30.0:
 			rig.set_zoom(22.0)
+	elif first_person:
+		set_first_person(false)
+
+## Through the King's eyes. The isometric rig stays where it is (and stops
+## panning on drags, since a drag now looks around); the King's own model is
+## hidden so it does not fill the view.
+func set_first_person(on: bool) -> void:
+	if on and not walk_mode:
+		set_walk_mode(true)
+	first_person = on
+	rig.blocked = on
+	_fp.enable(on, _king_facing)
+	_king.visible = not on
+	if _mount_node != null:
+		_mount_node.visible = not on
+	if on:
+		_fp.update_pose(king_pos, mount != "")
+	else:
+		rig.camera.make_current()
+		_king_facing = _fp.yaw
+		rig.focus_on(king_pos)
+
+## Climb onto the next of the King's bonded Nivians, or down again after the
+## last. Each kin has its own pace, so a Unitone is the fast ride.
+func cycle_mount() -> String:
+	var bonded: Array = Game.state["king"]["bonded"]
+	if bonded.is_empty():
+		mount = ""
+	else:
+		var i := bonded.find(mount)
+		mount = "" if i == bonded.size() - 1 else str(bonded[i + 1])
+	if _mount_node != null:
+		_mount_node.queue_free()
+		_mount_node = null
+	if mount != "":
+		_mount_node = MeshBuilder.instance(Troops.build(mount))
+		_mount_node.visible = not first_person
+		add_child(_mount_node)
+	_place_king()
+	return mount
+
+func walk_speed() -> float:
+	if mount == "":
+		return Config.KING_WALK_SPEED
+	return Config.KING_WALK_SPEED + 1.4 * float(Config.CREATURES[mount]["speed"])
+
+func _place_king(bob := 0.0) -> void:
+	var seat := 0.42 if mount != "" else 0.0
+	_king.position = king_pos + Vector3(0, seat + bob, 0)
+	_king.rotation.y = _king_facing
+	if _mount_node != null:
+		_mount_node.position = king_pos + Vector3(0, bob, 0)
+		_mount_node.rotation.y = _king_facing
+	if first_person:
+		_fp.update_pose(king_pos, mount != "")
 
 func _walk(delta: float) -> void:
 	var move := joystick
@@ -173,15 +237,22 @@ func _walk(delta: float) -> void:
 	if move.length() > 1.0:
 		move = move.normalized()
 	if move.length_squared() > 1e-4:
-		# screen-relative: "up" on the stick walks away from the camera
-		var fwd := -rig.global_transform.basis.z
-		fwd.y = 0.0
-		fwd = fwd.normalized()
-		var right := rig.global_transform.basis.x
-		right.y = 0.0
-		right = right.normalized()
+		# "up" walks the way the view faces: away from the isometric camera,
+		# or straight ahead through the King's eyes
+		var fwd: Vector3
+		var right: Vector3
+		if first_person:
+			fwd = _fp.forward()
+			right = _fp.right()
+		else:
+			fwd = -rig.global_transform.basis.z
+			fwd.y = 0.0
+			fwd = fwd.normalized()
+			right = rig.global_transform.basis.x
+			right.y = 0.0
+			right = right.normalized()
 		var dir := (right * move.x - fwd * move.y).normalized()
-		var step := dir * Config.KING_WALK_SPEED * delta
+		var step := dir * walk_speed() * delta
 		var next := king_pos + step
 		if _can_stand(next):
 			king_pos = next
@@ -189,12 +260,15 @@ func _walk(delta: float) -> void:
 			king_pos.x = next.x
 		elif _can_stand(Vector3(king_pos.x, 0, next.z)):
 			king_pos.z = next.z
-		_king_facing = atan2(-dir.x, -dir.z)
-		_king.position = king_pos + Vector3(0, absf(sin(Time.get_ticks_msec() * 0.014)) * 0.07, 0)
+		# through his own eyes the King faces where he looks, not where he steps
+		_king_facing = _fp.yaw if first_person else atan2(-dir.x, -dir.z)
+		_place_king(absf(sin(Time.get_ticks_msec() * 0.014)) * 0.07)
 	else:
-		_king.position = king_pos
-	_king.rotation.y = _king_facing
-	rig.focus_on(king_pos)
+		if first_person:
+			_king_facing = _fp.yaw
+		_place_king()
+	if not first_person:
+		rig.focus_on(king_pos)
 
 ## Land only, and never through a building (roads are fine to walk on).
 func _can_stand(p: Vector3) -> bool:

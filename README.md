@@ -46,6 +46,8 @@ Windows, Linux, macOS and Android are already set up in `export_presets.cfg`.
 | Collect everything | `C` |
 | Walk as the King | **Walk**, or `K`. `W` `A` `S` `D` / arrows or the on-screen stick move him; the camera follows. `Esc` or **Stop walking** ends it |
 | Throw a Nivian ball | **Throw**, `Space`, or tap the wild Nivian, once you are close to one in the forest |
+| First person | **First person**, or `V`, in the kingdom or on a raid once the King is deployed. Drag or hold `Q` / `E` to look around; `W` `A` `S` `D` walk the way you face |
+| Ride a Nivian | **Ride**, or `R`, while walking: climbs onto the next of the King's Nivians, or back down after the last |
 
 A touchpad's two-finger scroll and pinch gestures pan and zoom directly, so a
 trackpad doesn't have to be driven like a mouse. On a real touchscreen, one
@@ -70,6 +72,15 @@ with a ruler under twenty credits. Soldiers make the same trip on their own:
 a Nivian lost in a raid sends its soldier to the forest for a while, and they
 come back with another.
 
+**First person** puts you behind the King's eyes, in the kingdom and in a
+raid alike. In the kingdom he walks wherever he likes and can ride any of
+his Nivians (a Unitone is the fastest); in a raid he goes where you walk
+him and strikes whatever comes within reach, while the rest of the army
+keeps to its squad orders. Switch back to the isometric view at any time.
+Townsfolk are out in the streets with their Nivians trailing behind them,
+and they keep strictly to the roads you lay; with no roads they gather in
+the square before the Castle. Only the King goes wherever he pleases.
+
 ## What is in the game
 
 Everything the design document lists for Castle Level One, section 5:
@@ -83,6 +94,7 @@ Everything the design document lists for Castle Level One, section 5:
 | **Military stationing** | Guard Stations and Outposts house the army; the Law Enforcer Ground Cavalry Outpost houses cavalry alone. |
 | **The home island** | Ten times the buildable area of the original plot, so a full set of buildings no longer tiles the whole island by Castle Level Two. |
 | **Short-Fire Cannon** | The single Castle One defence: short range, fast rate of fire. |
+| **First person and the streets** | A perspective camera at the King's eyes, in the kingdom and in raids; mounting his Nivians; and townsfolk who walk the roads, and only the roads, with their Nivians in tow. |
 | **The forest** | A second island, bridged to the home coast, where wild Nivians roam. The King catches his own in person, on foot with a Nivian ball; soldiers who lose one in a raid go and bond another off-screen. The King's Nivians fight beside him in a raid. |
 | **Population and bonding** | Citizens take jobs from your buildings, age each season, are born when there is room, and die of old age. Every citizen bonds one Nivian, rarely two; a soldier bonds exactly two, who fight only when that soldier is sent into battle, never trained or sent in on their own; the King can bond up to five. Up to 15 soldiers total. |
 | **Creatures** | Stats derive from the placeholder Normal, Fire and Water ratios and the three sample creatures in section 7. |
@@ -90,9 +102,8 @@ Everything the design document lists for Castle Level One, section 5:
 | **Raids** | Three enemy kingdoms with procedurally arranged bases. Deployed soldiers wait in a staging area until a squad command sends a chosen number of them, with their bonded Nivians, at a chosen building; nobody attacks unordered. Troops route around walls or break through them, and answer your orders mid-fight. Stars come from half the base, the enemy Castle, and a clean sweep. |
 | **Consequence** | Soldiers who fall may be lost for good, taking their citizen with them. The rest are injured and recover, far faster once a Hospital stands. |
 
-Left for later milestones, as the document recommends: the first-person combat
-layer, Magic Circles, Commanders, the other six regions, multiplayer and
-character creation.
+Left for later milestones, as the document recommends: Magic Circles,
+Commanders, the other six regions, multiplayer and character creation.
 
 ## Sound
 
@@ -134,6 +145,8 @@ scripts/art/Buildings.gd A model for every Castle One building
 scripts/art/Troops.gd    Models for soldiers, creatures and the King
 scripts/world/Island.gd  The island: grass, beach, sea, trees and rocks
 scripts/world/Forest.gd  The forest island, its bridge, and the wild Nivians
+scripts/world/FirstPersonCam.gd  The King's eyes: a perspective camera for both scenes
+scripts/world/Townsfolk.gd  Citizens and their Nivians walking the roads
 scripts/world/BaseWorld  Your kingdom in 3D: placement, selection, collection
 scripts/world/CameraRig  Isometric camera: pan, zoom, tap
 scripts/world/WorldEnv   Sun, sky and shadow settings shared by both scenes
@@ -179,6 +192,7 @@ godot --headless --path . -- --after=30 --demo=sim
 # check the staging area / squad orders, and the forest / catching, headlessly
 godot --headless --path . -- --after=30 --demo=squad
 godot --headless --path . -- --after=30 --demo=catch
+godot --headless --path . -- --after=30 --demo=view
 
 # write every sound to /tmp/nivi_audio so it can be listened to
 godot --headless --path . -- --after=30 --demo=audio

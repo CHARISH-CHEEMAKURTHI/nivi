@@ -15,6 +15,15 @@ static func build(type: String) -> Mesh:
 		_: b.box(Vector3.ZERO, Vector3(0.3, 0.6, 0.3), Palette.CLOTH_BLUE)
 	return b.commit()
 
+## A townsperson for the streets: the same figure as a soldier, in one of a
+## few plain tunics picked by `seed`, without helmet or weapons.
+static func citizen(seed: int) -> Mesh:
+	var b := MeshBuilder.new()
+	var tunics := [Palette.CLOTH_BLUE, Palette.CLOTH_RED, Palette.ROOF_TEAL, Palette.THATCH_DARK, Palette.PURPLE, Palette.LEAF]
+	var hair := [Palette.WOOD_DARK, Palette.THATCH, Palette.IRON_DARK, Palette.WOOD]
+	_person(b, tunics[seed % tunics.size()], Palette.WOOD, hair[(seed / 3) % hair.size()], 0.92)
+	return b.commit()
+
 static func _person(b: MeshBuilder, tunic: Color, trim: Color, helm: Color, scale := 1.0) -> void:
 	var s := scale
 	# legs, body, arms, head

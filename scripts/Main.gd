@@ -30,6 +30,12 @@ func _enter_base() -> void:
 	hud.request_new_game.connect(_on_new_game)
 	hud.request_walk.connect(_on_walk)
 	hud.request_throw.connect(func() -> void: world.throw_ball())
+	hud.request_first_person.connect(_on_first_person)
+	hud.request_mount.connect(func() -> void:
+		var m := world.cycle_mount()
+		Sfx.play("tap")
+		hud.toast("Riding a %s." % Config.UNITS[m]["name"] if m != "" else "Back on foot.")
+		hud.refresh_walk_bar())
 	hud.walk_input.connect(func(v: Vector2) -> void: world.joystick = v)
 	world.caught.connect(func(msg: String, ok: bool) -> void:
 		hud.toast(msg)
@@ -99,6 +105,24 @@ func _on_walk(on: bool) -> void:
 	if on:
 		hud.hide_panel()
 
+## Through the King's eyes, in the kingdom. Turning it on also starts walking.
+func _on_first_person(on: bool) -> void:
+	if world == null:
+		return
+	if on and not world.walk_mode:
+		_on_walk(true)
+	world.set_first_person(on)
+	hud.refresh_walk_bar()
+
+## Through the King's eyes, on a raid. Needs him on the field.
+func _on_battle_first_person(on: bool) -> void:
+	if battle_world == null:
+		return
+	var err := battle_world.set_first_person(on)
+	if err != "":
+		Sfx.play("error")
+	battle_hud.refresh(battle_world.deploy_type)
+
 # ---------------------------------------------------------------- raid
 func _on_attack(kingdom_id: String) -> void:
 	var kingdom := {}
@@ -128,7 +152,11 @@ func _on_attack(kingdom_id: String) -> void:
 	battle_world.setup(battle)
 	battle_hud = BattleHud.new()
 	battle_hud.state = battle
+	battle_hud.set_world(battle_world)
 	add_child(battle_hud)
+	battle_hud.request_first_person.connect(_on_battle_first_person)
+	battle_hud.walk_input.connect(func(v: Vector2) -> void: battle_world.joystick = v)
+	battle_world.first_person_ended.connect(func() -> void: battle_hud.refresh(battle_world.deploy_type))
 	battle_world.tapped_building.connect(_on_battle_building)
 	battle_world.tapped_ground.connect(_on_battle_ground)
 	battle_world.tapped_unit.connect(_on_battle_unit)
@@ -244,10 +272,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (event as InputEventKey).pressed:
 		match (event as InputEventKey).keycode:
 			KEY_ESCAPE:
-				if world != null and world.is_placing():
+				if battle_world != null and battle_world.first_person:
+					_on_battle_first_person(false)
+				elif world != null and world.is_placing():
 					_on_place_cancel()
+				elif world != null and world.first_person and hud != null and not hud.modal_open():
+					_on_first_person(false)
 				elif world != null and world.walk_mode and hud != null and not hud.modal_open():
 					_on_walk(false)
+			KEY_V:
+				if battle_world != null:
+					_on_battle_first_person(not battle_world.first_person)
+				elif world != null and hud != null and not hud.modal_open():
+					_on_first_person(not world.first_person)
+			KEY_R:
+				if world != null and world.walk_mode and hud != null:
+					hud.request_mount.emit()
 				elif hud != null:
 					hud.close_modal()
 					hud.hide_panel()

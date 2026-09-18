@@ -49,6 +49,12 @@ func _run_demo() -> void:
 			_run_squad_test()
 		"catch":
 			await _run_catch_test()
+		"view":
+			await _run_view_test()
+		"fp":
+			main._on_walk(true)
+			main._on_first_person(true)
+			main.world._fp.yaw = 2.6
 		"forest":
 			main._on_walk(true)
 			main.world.king_pos = main.world.forest.center + Vector3(-4, 0, 2)
@@ -634,4 +640,114 @@ func _run_catch_test() -> void:
 	print("[catch] after the trip: '%s' bonded=%s (expect ready, two Nivians)" % [soldier["status"], soldier["bonded"]])
 	main._on_walk(false)
 	print("[catch] DONE")
+	get_tree().quit()
+
+## Headless check of first person: the view switches to the King's eyes and
+## back, WASD walks the way he looks, riding a Nivian is faster, townsfolk
+## and their Nivians keep to the roads, and on a raid the King can be walked
+## by hand and strikes what he reaches.
+func _run_view_test() -> void:
+	var main := get_tree().current_scene
+	var world: BaseWorld = main.world
+	var fp: FirstPersonCam = world._fp
+	main._on_first_person(true)
+	print("[view] first person on: walk=%s fp=%s fp cam current=%s iso cam current=%s king hidden=%s (expect all T, iso F)" % [
+		world.walk_mode, world.first_person, fp.camera.current, world.rig.camera.current, not world._king.visible])
+	# look north (-Z) and walk forward: he must move along -Z, not the camera's diagonal
+	fp.yaw = 0.0
+	var start := world.king_pos
+	world.joystick = Vector2(0, -1)
+	for i in 30:
+		world._walk(1.0 / 60.0)
+	var moved := world.king_pos - start
+	print("[view] half a second forward facing north: dz=%.2f dx=%.2f (expect dz negative and dx 0; the Castle stands in his way after ~1.5)" % [moved.z, moved.x])
+	fp.yaw = PI * 0.5   # look west (-X)
+	start = world.king_pos
+	for i in 30:
+		world._walk(1.0 / 60.0)
+	moved = world.king_pos - start
+	print("[view] facing west: dx=%.2f dz=%.2f (expect dx about -2.5, dz 0)" % [moved.x, moved.z])
+	world.joystick = Vector2.ZERO
+	print("[view] eye height above the King's feet: %.2f (expect %.2f)" % [fp.position.y - world.king_pos.y, FirstPersonCam.EYE_ON_FOOT])
+
+	# riding: no Nivian yet -> nothing to ride; with one -> faster
+	print("[view] ride with no Nivian: '%s' speed=%.1f" % [world.cycle_mount(), world.walk_speed()])
+	Game.state["king"]["bonded"] = ["garuan", "unitone"]
+	print("[view] ride: %s speed=%.1f, then %s speed=%.1f, then '%s' speed=%.1f (expect garuan < unitone, then on foot)" % [
+		world.cycle_mount(), world.walk_speed(), world.cycle_mount(), world.walk_speed(), world.cycle_mount(), world.walk_speed()])
+	world.cycle_mount()
+	print("[view] mounted eye height: %.2f (expect %.2f)" % [fp.position.y - world.king_pos.y, FirstPersonCam.EYE_MOUNTED])
+	main._on_first_person(false)
+	print("[view] back to isometric: fp=%s iso cam current=%s king visible=%s" % [world.first_person, world.rig.camera.current, world._king.visible])
+	main._on_walk(false)
+
+	# townsfolk: without roads they wait in the square; with a road loop they
+	# walk it and never leave it
+	var tf: Townsfolk = world.townsfolk
+	var civilians := 0
+	for c in Game.state["citizens"]:
+		if c["profession"] != "Soldier":
+			civilians += 1
+	print("[view] townsfolk figures=%d civilians=%d (expect equal), roads=%d" % [tf.count(), civilians, tf._roads.size()])
+	Game.state["resources"]["serge"] = 100000.0
+	Game.state["resources"]["jade"] = 100000.0
+	var mid := Config.GRID / 2
+	for x in range(mid - 6, mid + 6):
+		Game.build("road", x, mid + 9)
+		Game.build("road", x, mid + 13)
+	for y in range(mid + 10, mid + 13):
+		Game.build("road", mid - 6, y)
+		Game.build("road", mid + 5, y)
+	print("[view] laid a road loop: roads=%d" % tf._roads.size())
+	var off_road := 0
+	var walked := 0.0
+	var before: Array = []
+	for f in tf._folk:
+		before.append(f["pos"])
+	for i in 600:
+		tf._process(1.0 / 30.0)
+		for f in tf._folk:
+			if not tf.on_road(f["pos"]):
+				off_road += 1
+	for i in tf._folk.size():
+		walked += (tf._folk[i]["pos"] as Vector3).distance_to(before[i])
+	print("[view] 20s later: off-road samples=%d (expect 0), total displacement=%.1f (expect > 0), followers=%d" % [
+		off_road, walked, tf._folk[0]["followers"].size() if not tf._folk.is_empty() else -1])
+
+	# a raid: first person needs the King on the field, then walks him by hand
+	Game.add_unit("knight", 0, ["unitone", "garuan"])
+	main._on_attack("greywater")
+	var bw: BattleWorld = main.battle_world
+	var b: BattleState = main.battle
+	print("[view] raid, King not deployed: '%s'" % bw.set_first_person(true))
+	b.deploy("king", Vector2i(4, 20))
+	var err := bw.set_first_person(true)
+	var k := bw.king_unit()
+	print("[view] King deployed: err='%s' directive=%s fp cam current=%s" % [err, k["directive"], bw._fp.camera.current])
+	bw._fp.yaw = -PI * 0.5   # look east (+X), into the base
+	var kstart: Vector2 = k["pos"]
+	bw.joystick = Vector2(0, -1)
+	for i in 60:
+		bw._walk_king(1.0 / 60.0)
+	bw.joystick = Vector2.ZERO
+	print("[view] walked east for 1s: dx=%.2f dy=%.2f (expect dx about +%.1f)" % [k["pos"].x - kstart.x, k["pos"].y - kstart.y, float(Config.UNITS["king"]["speed"]) * 1.3])
+	# straight into the nearest building: he stops at its wall and hits it
+	var castle := {}
+	for bld in b.buildings:
+		if bld["type"] == "castle":
+			castle = bld
+	k["pos"] = Vector2(castle["x"] - 0.6, castle["y"] + 1.5)
+	var before_hp: float = castle["hp"]
+	bw.joystick = Vector2(0, -1)
+	var t := 0.0
+	while t < 4.0:
+		bw._walk_king(1.0 / 30.0)
+		b.update(1.0 / 30.0)
+		t += 1.0 / 30.0
+	bw.joystick = Vector2.ZERO
+	print("[view] pushed at the Castle for 4s: inside it=%s (expect false), Castle hp %d -> %d (expect lower), directive still %s" % [
+		not b._walkable(k["pos"]), int(before_hp), int(castle["hp"]), k["directive"]])
+	bw.set_first_person(false)
+	print("[view] off again: directive=%s iso cam current=%s" % [k["directive"], bw.rig.camera.current])
+	print("[view] DONE")
 	get_tree().quit()

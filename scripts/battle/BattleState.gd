@@ -477,6 +477,46 @@ func proceed(unit_id := 0) -> void:
 		u["path"] = []
 		u["repath"] = 0.0
 
+## Hand control of a unit (the King, seen first person) to the player: it
+## stops pathing, attacks anything that comes within reach, and goes only
+## where `move_manual` steps it. Off again returns it to its own judgement.
+func set_manual(unit_id: int, on: bool) -> void:
+	var u := find_unit(unit_id)
+	if u.is_empty() or u["dead"]:
+		return
+	u["directive"] = "manual" if on else "auto"
+	u["path"] = []
+	u["target_id"] = 0
+	u["wall_id"] = 0
+	u["committed"] = true
+
+## Steps a manual unit by a ground-plane offset, sliding along buildings and
+## standing walls rather than through them, and never off the map.
+func move_manual(unit_id: int, delta: Vector2) -> void:
+	var u := find_unit(unit_id)
+	if u.is_empty() or u["dead"] or u["directive"] != "manual":
+		return
+	var pos: Vector2 = u["pos"]
+	var next := pos + delta
+	if _walkable(next):
+		pos = next
+	elif _walkable(Vector2(next.x, pos.y)):
+		pos.x = next.x
+	elif _walkable(Vector2(pos.x, next.y)):
+		pos.y = next.y
+	if pos != u["pos"]:
+		u["facing"] = _face(pos - u["pos"])
+		u["pos"] = pos
+
+func _walkable(p: Vector2) -> bool:
+	var lim := float(Config.BATTLE_GRID) - 0.3
+	if p.x < 0.3 or p.y < 0.3 or p.x > lim or p.y > lim:
+		return false
+	var b := building_at(int(p.x), int(p.y))
+	if b.is_empty() or b["hp"] <= 0.0:
+		return true
+	return Config.BUILDINGS[b["type"]].get("passable", false)
+
 func move_to(tile: Vector2i, unit_id: int) -> void:
 	var u := find_unit(unit_id)
 	if u.is_empty() or u["dead"]:
@@ -599,7 +639,9 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 				events.append({"kind": "melee", "pos": u["pos"]})
 				_damage_building(hitting, float(d["atk"]))
 		return
-	if u["directive"] == "hold":
+	if u["directive"] == "hold" or u["directive"] == "manual":
+		# held, or walked by hand (the King in first person): never paths on
+		# its own, though a manual unit still swings at whatever is in reach
 		u["stuck_timer"] = 0.0
 		u["stuck_anchor"] = u["pos"]
 		return
