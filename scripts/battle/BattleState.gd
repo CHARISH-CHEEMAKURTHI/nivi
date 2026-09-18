@@ -480,6 +480,7 @@ func _update_unit(u: Dictionary, dt: float) -> void:
 				projectiles.append({"kind": str(d.get("element", "water")), "pos": u["pos"], "height": 0.6,
 					"target_building": int(hitting["id"]), "target_unit": 0, "speed": 9.0, "damage": float(d["atk"])})
 			else:
+				events.append({"kind": "melee", "pos": u["pos"]})
 				_damage_building(hitting, float(d["atk"]))
 		return
 	if u["directive"] == "hold":

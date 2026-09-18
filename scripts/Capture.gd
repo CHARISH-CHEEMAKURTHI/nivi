@@ -18,14 +18,14 @@ func _ready() -> void:
 			_after = int(a.substr(8))
 		elif a.begins_with("--demo="):
 			_demo = a.substr(7)
-	set_process(_target != "")
+	set_process(_target != "" or _demo != "")
 
 func _process(_delta: float) -> void:
 	_frames += 1
 	if _demo != "" and not _demo_done and _frames == maxi(8, _after - 60):
 		_demo_done = true
 		_run_demo()
-	if _frames < _after:
+	if _target == "" or _frames < _after:
 		return
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
@@ -39,6 +39,12 @@ func _run_demo() -> void:
 	if main == null:
 		return
 	match _demo:
+		"audio":
+			_dump_audio()
+		"audiocheck":
+			_check_audio()
+		"raidmusic":
+			_check_raid_music()
 		"sim":
 			_simulate_raid()
 		"build":
@@ -70,6 +76,8 @@ func _run_demo() -> void:
 			main.world.move_ghost(Vector2i(24, 22))
 		"attack":
 			main.hud.show_attack()
+		"menu":
+			main.hud.show_menu()
 		"battle":
 			for t in ["knight", "knight", "cavalry", "garuan", "unitone", "unitone", "firon"]:
 				Game.add_unit(t)
@@ -118,4 +126,74 @@ func _simulate_raid() -> void:
 	var r := b.result()
 	print("[sim] END ", r["reason"], "  stars=", r["stars"], "  destruction=", int(float(r["destruction"]) * 100.0), "%",
 		"  loot=", int(r["loot"]["serge"]), "/", int(r["loot"]["jade"]), "  fallen=", r["fallen"].size())
+	get_tree().quit()
+
+## Development helper: render every sound to disk so the audio can be checked
+## without speakers.
+func _dump_audio() -> void:
+	var dir := "/tmp/nivi_audio"
+	DirAccess.make_dir_recursive_absolute(dir)
+	for name in Sfx._sounds:
+		var stream: AudioStreamWAV = Sfx._sounds[name]
+		stream.save_to_wav("%s/sfx_%s.wav" % [dir, name])
+		print("[audio] sfx %-10s %6.3fs" % [name, stream.get_length()])
+	# music renders on a worker thread, so wait for it before saving
+	var waited := 0.0
+	while not Music._ready_to_play and waited < 60.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	print("[audio] music ready after %.1fs" % waited)
+	for name in ["kingdom", "raid"]:
+		var p: AudioStreamPlayer = Music._players[name]
+		var st: AudioStreamWAV = p.stream
+		st.save_to_wav("%s/music_%s.wav" % [dir, name])
+		print("[audio] music %-8s %6.2fs loop=%s" % [name, st.get_length(), st.loop_mode != AudioStreamWAV.LOOP_DISABLED])
+	get_tree().quit()
+
+## Development helper: confirm the music actually reached a player and that the
+## effect voices are wired up.
+func _check_audio() -> void:
+	var waited := 0.0
+	while not Music._ready_to_play and waited < 60.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	await get_tree().create_timer(2.5).timeout
+	for name in ["kingdom", "raid"]:
+		var p: AudioStreamPlayer = Music._players[name]
+		print("[check] music %-8s playing=%s vol=%.1fdB stream=%s pos=%.2fs" % [
+			name, p.playing, p.volume_db, p.stream != null, p.get_playback_position()])
+	print("[check] sfx bank=%d voices=%d music_on=%s sfx_on=%s bus_music=%.1f bus_sfx=%.1f" % [
+		Sfx._sounds.size(), Sfx._players.size(), Sfx.music_enabled, Sfx.sfx_enabled,
+		AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Music")),
+		AudioServer.get_bus_volume_db(AudioServer.get_bus_index("SFX"))])
+	Sfx.play("collect")
+	await get_tree().create_timer(0.1).timeout
+	var busy := 0
+	for p2 in Sfx._players:
+		if p2.playing:
+			busy += 1
+	print("[check] after one effect, voices playing=%d" % busy)
+	get_tree().quit()
+
+## Development helper: confirm the soundtrack follows the player into a raid
+## and back home again.
+func _check_raid_music() -> void:
+	var main := get_tree().current_scene
+	var waited := 0.0
+	while not Music._ready_to_play and waited < 60.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	await get_tree().create_timer(1.6).timeout
+	print("[check] in the kingdom: current=%s kingdom_vol=%.1f raid_vol=%.1f" % [
+		Music._current, Music._players["kingdom"].volume_db, Music._players["raid"].volume_db])
+	Game.add_unit("knight")
+	main._on_attack("ashford")
+	await get_tree().create_timer(1.8).timeout
+	print("[check] on the raid:   current=%s kingdom_vol=%.1f raid_vol=%.1f playing=%s" % [
+		Music._current, Music._players["kingdom"].volume_db, Music._players["raid"].volume_db,
+		Music._players["raid"].playing])
+	main._finish_battle()
+	await get_tree().create_timer(1.8).timeout
+	print("[check] back home:     current=%s kingdom_vol=%.1f raid_vol=%.1f" % [
+		Music._current, Music._players["kingdom"].volume_db, Music._players["raid"].volume_db])
 	get_tree().quit()

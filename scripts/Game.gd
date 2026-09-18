@@ -415,6 +415,7 @@ func _tick(dt: float) -> void:
 			if b["build_remaining"] <= 0.0:
 				b["build_remaining"] = 0.0
 				log_line("%s is complete." % d["name"])
+				Sfx.play("done")
 				dirty = true
 				buildings_changed.emit()
 			continue
@@ -431,6 +432,7 @@ func _tick(dt: float) -> void:
 			q.remove_at(0)
 			add_unit(item["type"], item["citizen_id"])
 			log_line("%s has finished training." % Config.UNITS[item["type"]]["name"])
+			Sfx.play("train")
 
 	for u in state["army"]:
 		if u["status"] == "injured":

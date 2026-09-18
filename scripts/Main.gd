@@ -30,6 +30,7 @@ func _enter_base() -> void:
 	hud.request_new_game.connect(_on_new_game)
 	world.rig.focus_on(Vector3.ZERO)
 	world.rig.set_zoom(26.0)
+	Music.play("kingdom")
 
 func _on_building_tapped(b: Dictionary) -> void:
 	var d: Dictionary = Config.BUILDINGS[b["type"]]
@@ -37,6 +38,7 @@ func _on_building_tapped(b: Dictionary) -> void:
 	if d.has("produces") and Game.is_built(b) and b["stored"] >= float(d["produces"]["capacity"]) * 0.18:
 		var got := Game.collect(b)
 		if got > 0.0:
+			Sfx.play("collect")
 			hud.toast("+%d %s" % [int(got), Config.RESOURCES[d["produces"]["resource"]]["name"]])
 			world.select(b)
 			return
@@ -57,8 +59,10 @@ func _on_request_move(id: int) -> void:
 func _on_place_confirm() -> void:
 	var err := world.confirm_placing()
 	if err != "":
+		Sfx.play("error")
 		hud.toast(err)
 		return
+	Sfx.play("place")
 	if not world.is_placing():
 		hud.hide_place_bar()
 	else:
@@ -74,6 +78,7 @@ func _on_new_game() -> void:
 	Game.new_game()
 	world.rebuild()
 	hud.refresh_top()
+	Sfx.play("done")
 	hud.toast("A new kingdom rises.")
 
 # ---------------------------------------------------------------- raid
@@ -89,6 +94,7 @@ func _on_attack(kingdom_id: String) -> void:
 		hud.toast("Nobody is ready to fight.")
 		return
 	Game.save_game()
+	Music.play("raid")
 	battle = BattleState.new(kingdom, roster, Game.state["king"]["status"] == "ready")
 	_results_shown = false
 
@@ -141,7 +147,9 @@ func _on_battle_ground(tile: Vector2i) -> void:
 	if battle_world.deploy_type != "":
 		var err := battle.deploy(battle_world.deploy_type, tile)
 		if err != "":
+			Sfx.play("error")
 			return
+		Sfx.play("deploy")
 		if battle_world.deploy_type == "king" or int(battle.available_counts().get(battle_world.deploy_type, 0)) == 0:
 			battle_world.deploy_type = ""
 			battle_world.show_deploy_hint(false)

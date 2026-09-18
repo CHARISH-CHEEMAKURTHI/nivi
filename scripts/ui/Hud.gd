@@ -129,6 +129,7 @@ func _button(text: String, variation := "", on_press := Callable()) -> Button:
 	b.text = text
 	if variation != "":
 		b.theme_type_variation = variation
+	b.pressed.connect(func() -> void: Sfx.play("tap"))
 	if on_press.is_valid():
 		b.pressed.connect(on_press)
 	return b
@@ -242,8 +243,10 @@ func _build_bottom(root: Control) -> void:
 func _collect_all() -> void:
 	var got := Game.collect_all()
 	if got["serge"] + got["jade"] <= 0.0:
+		Sfx.play("error")
 		toast("Nothing to collect yet.")
 	else:
+		Sfx.play("collect")
 		toast("+%d Serge, +%d Jade" % [int(got["serge"]), int(got["jade"])])
 
 # ---------------------------------------------------------------- side panel
@@ -284,12 +287,16 @@ func _build_panel(root: Control) -> void:
 	scroll.add_child(_panel_body)
 
 func hide_panel() -> void:
+	if _panel.visible:
+		Sfx.play("close")
 	_panel.visible = false
 	_panel_kind = ""
 	if world != null:
 		world.clear_selection()
 
 func _open_panel(kind: String, arg: Variant, title: String) -> void:
+	if not _panel.visible:
+		Sfx.play("open")
 	_panel_kind = kind
 	_panel_arg = arg
 	_panel_title.text = title
@@ -463,6 +470,7 @@ func show_building(b: Dictionary) -> void:
 	if d.has("produces") and Game.is_built(b):
 		actions.add_child(_button("Collect %d" % int(b["stored"]), "GoldButton", func() -> void:
 			var got := Game.collect(b)
+			Sfx.play("collect" if got > 0 else "error")
 			toast("+%d %s" % [int(got), Config.RESOURCES[d["produces"]["resource"]]["name"]] if got > 0 else "Storage is full.")
 			show_building(b)))
 	if d.has("trains") and Game.is_built(b):
@@ -477,6 +485,7 @@ func show_building(b: Dictionary) -> void:
 		hide_panel()))
 	if b["type"] != "castle":
 		actions.add_child(_button("Demolish", "RedButton", func() -> void:
+			Sfx.play("destroy")
 			Game.remove_building(b)
 			toast("Demolished. Half the cost came back.")
 			hide_panel()))
@@ -553,7 +562,10 @@ func _unit_card(type: String) -> Control:
 		var b := _button("Train", "GreenButton", func() -> void:
 			var e := Game.train(type)
 			if e != "":
+				Sfx.play("error")
 				toast(e)
+			else:
+				Sfx.play("train")
 			show_army())
 		b.add_theme_font_size_override("font_size", 15)
 		col.add_child(b)
@@ -616,7 +628,10 @@ func show_kingdom() -> void:
 		var btn := _button(text, "GreenButton" if id == "festival" else "GoldButton", func() -> void:
 			var e := Game.decree(id)
 			if e != "":
+				Sfx.play("error")
 				toast(e)
+			else:
+				Sfx.play("done" if id == "festival" else "collect")
 			show_kingdom())
 		btn.disabled = cd > 0.0
 		btn.tooltip_text = dd["desc"]
@@ -736,6 +751,8 @@ func _build_modal(root: Control) -> void:
 	scroll.add_child(_modal_body)
 
 func _open_modal(title: String) -> VBoxContainer:
+	if not _modal.visible:
+		Sfx.play("open")
 	_modal.visible = true
 	for c in _modal_body.get_children():
 		c.queue_free()
@@ -743,6 +760,8 @@ func _open_modal(title: String) -> VBoxContainer:
 	return _modal_body
 
 func close_modal() -> void:
+	if _modal.visible:
+		Sfx.play("close")
 	_modal.visible = false
 
 func modal_open() -> bool:
@@ -790,6 +809,7 @@ func show_menu() -> void:
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(blurb)
 	body.add_child(_button("How to play", "", func() -> void: show_help()))
+	_sound_toggles(body)
 	body.add_child(_button("Save now", "GreenButton", func() -> void:
 		Game.save_game()
 		close_modal()
@@ -798,6 +818,30 @@ func show_menu() -> void:
 		close_modal()
 		request_new_game.emit()))
 	body.add_child(_button("Close", "WoodButton", func() -> void: close_modal()))
+
+## Music and sound switches, remembered between sessions.
+func _sound_toggles(body: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var music_btn := _button("", "", Callable())
+	var sfx_btn := _button("", "", Callable())
+	var label := func() -> void:
+		music_btn.text = "Music: %s" % ("on" if Sfx.music_enabled else "off")
+		music_btn.theme_type_variation = "GreenButton" if Sfx.music_enabled else "WoodButton"
+		sfx_btn.text = "Sound: %s" % ("on" if Sfx.sfx_enabled else "off")
+		sfx_btn.theme_type_variation = "GreenButton" if Sfx.sfx_enabled else "WoodButton"
+	label.call()
+	music_btn.pressed.connect(func() -> void:
+		Sfx.music_enabled = not Sfx.music_enabled
+		label.call())
+	sfx_btn.pressed.connect(func() -> void:
+		Sfx.sfx_enabled = not Sfx.sfx_enabled
+		label.call())
+	music_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sfx_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(music_btn)
+	row.add_child(sfx_btn)
+	body.add_child(row)
 
 func show_help() -> void:
 	var body := _open_modal("How to Play")
@@ -820,6 +864,7 @@ func show_results(result: Dictionary, outcome: Dictionary, on_close: Callable) -
 	var stars := int(result["stars"])
 	var body := _open_modal("%s  -  %s" % ["Victory" if stars > 0 else "Defeat", result["enemy_name"]])
 	body.add_child(star_row(stars, 64))
+	Sfx.play("victory" if stars > 0 else "defeat")
 	body.add_child(_label(result["reason"], "MutedLabel"))
 	_row(body, "Destruction", "%d%%" % int(round(float(result["destruction"]) * 100.0)))
 	_row(body, "Loot", "%d Serge, %d Jade" % [int(result["loot"]["serge"]), int(result["loot"]["jade"])])

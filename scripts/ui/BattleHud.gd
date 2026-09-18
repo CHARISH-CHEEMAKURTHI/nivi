@@ -46,7 +46,9 @@ func _ready() -> void:
 	var end := Button.new()
 	end.text = "End Raid"
 	end.theme_type_variation = "RedButton"
-	end.pressed.connect(func() -> void: end_battle.emit())
+	end.pressed.connect(func() -> void:
+		Sfx.play("tap")
+		end_battle.emit())
 	top.add_child(end)
 
 	var hint_panel := PanelContainer.new()
@@ -87,6 +89,8 @@ func _ready() -> void:
 func _set_stars(earned: int) -> void:
 	if earned == _stars_shown:
 		return
+	if earned > _stars_shown and _stars_shown >= 0:
+		Sfx.play("star")
 	_stars_shown = earned
 	for c in _star_holder.get_children():
 		c.queue_free()
@@ -101,6 +105,7 @@ func _order_button(text: String, variation: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.theme_type_variation = variation
+	b.pressed.connect(func() -> void: Sfx.play("tap"))
 	b.pressed.connect(cb)
 	return b
 
@@ -191,7 +196,9 @@ func _troop_card(type: String, count: int, active: bool) -> Control:
 	pick.text = "Deploy"
 	pick.theme_type_variation = "GreenButton" if not active else "GoldButton"
 	pick.add_theme_font_size_override("font_size", 14)
-	pick.pressed.connect(func() -> void: pick_troop.emit(type))
+	pick.pressed.connect(func() -> void:
+		Sfx.play("tap")
+		pick_troop.emit(type))
 	col.add_child(pick)
 	card.add_child(col)
 	return card

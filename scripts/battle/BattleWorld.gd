@@ -148,12 +148,17 @@ func _play_event(e: Dictionary) -> void:
 			add_child(wreck)
 			_building_nodes[id] = wreck
 			_puff(wreck.position + Vector3(0, 0.4, 0))
+			Sfx.play("destroy")
 		"hit":
 			_spark(tile_to_world(e["pos"]) + Vector3(0, 0.5, 0), e.get("type", "cannon"))
+			Sfx.play("magic", 1.0, 0.07)
+		"melee":
+			Sfx.play("sword", 1.0, 0.09)
 		"muzzle":
 			_spark(tile_to_world(e["pos"]) + Vector3(0, 0.8, 0), "cannon")
+			Sfx.play("cannon", 1.0, 0.06)
 		"fell":
-			pass
+			Sfx.play("fell")
 
 func _puff(at: Vector3) -> void:
 	var b := MeshBuilder.new()

@@ -71,6 +71,32 @@ Left for later milestones, as the document recommends: the first-person combat
 layer, Magic Circles, Commanders, the other six regions, multiplayer and
 character creation.
 
+## Sound
+
+The soundtrack and every effect are synthesised in code at startup, so the game
+still ships without a single audio file.
+
+Two tracks loop under the game and cross-fade when you leave home or return: a
+calm one in the kingdom, built on a warm pad, a plucked arpeggio and a simple
+tune, and a driving one for raids with a pounding bass and a kit. Each is
+rendered on a worker thread while the game is already on screen, and the join
+is seamless because whatever is still ringing at the end of the loop is folded
+back onto the start.
+
+Seventeen effects cover the interface, the kingdom and the battlefield: clicks
+and panel whooshes, a refusal buzz, the thud of a building set down, a chime
+when one finishes, coins on collection, hammer on anvil, troops dropping in,
+steel, creature bolts, the cannon, buildings collapsing, a star earned, and a
+fanfare or a lament at the end of a raid. They play through a pool of voices so
+overlapping sounds never cut each other off, and the busy battlefield ones are
+thinned out so a hundred sword strikes a second do not turn to mush.
+
+Music and sound have separate mixer buses and separate switches under **Menu**,
+remembered between sessions in `user://nivi_settings.cfg`.
+
+Samples of the result are in `docs/`: `music_kingdom.wav`, `music_raid.wav` and
+`sound-effects.wav`.
+
 ## How the project is laid out
 
 ```
@@ -93,6 +119,9 @@ scripts/ui/UiTheme.gd    The wood-and-gold interface theme, generated at startup
 scripts/ui/Hud.gd        Resource bars, build menu, panels and windows
 scripts/ui/BattleHud.gd  The raid interface
 scripts/ui/Thumb.gd      Live 3D previews for the menu cards
+scripts/audio/Synth.gd   A small software synthesiser: oscillators and envelopes
+scripts/audio/Sfx.gd     Every sound effect, rendered at startup, plus the settings
+scripts/audio/Music.gd   The two looping tracks, composed and rendered on a thread
 scripts/Capture.gd       Development helper: render a frame, or simulate a raid
 shaders/                 Water and grass
 ```
@@ -122,4 +151,7 @@ godot --path . -- --capture=/tmp/shot.png --after=90 --demo=build
 
 # play a whole raid with no window and print what happened
 godot --headless --path . -- --after=30 --demo=sim
+
+# write every sound to /tmp/nivi_audio so it can be listened to
+godot --headless --path . -- --after=30 --demo=audio
 ```
